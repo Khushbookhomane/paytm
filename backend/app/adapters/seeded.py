@@ -63,12 +63,16 @@ class SeededDemoAdapter(BaseDataAdapter):
             db.refresh(merchant)
         merchant_id = merchant.id
 
-        # Clear existing data for deterministic idempotency
+        # Clear existing data — nullify FKs first for PostgreSQL
         db.query(TransactionItem).filter(
             TransactionItem.transaction_id.in_(
                 db.query(Transaction.id).filter(Transaction.merchant_id == merchant_id)
             )
         ).delete(synchronize_session=False)
+        db.query(Transaction).filter(Transaction.merchant_id == merchant_id).update(
+            {"customer_id": None}, synchronize_session=False
+        )
+        db.commit()
         db.query(Transaction).filter(Transaction.merchant_id == merchant_id).delete(synchronize_session=False)
         db.query(Customer).filter(Customer.merchant_id == merchant_id).delete(synchronize_session=False)
         db.query(Product).filter(Product.merchant_id == merchant_id).delete(synchronize_session=False)

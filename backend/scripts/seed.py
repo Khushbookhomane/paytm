@@ -17,10 +17,11 @@ from app.db import SessionLocal, Base, engine
 from app.adapters.seeded import SeededDemoAdapter
 from app.models import Merchant, Product, Customer, Transaction, Expense
 
-# Safety guard: refuse to seed if APP_ENV is production
+# Safety guard: refuse to seed if APP_ENV is production AND no override
 APP_ENV = os.environ.get("APP_ENV", "development").lower()
-if APP_ENV == "production":
-    print("ERROR: seed.py must not be run in production. Set APP_ENV=development.")
+SEED_OVERRIDE = os.environ.get("ALLOW_PROD_SEED", "").lower() == "true"
+if APP_ENV == "production" and not SEED_OVERRIDE:
+    print("ERROR: seed.py must not be run in production. Set APP_ENV=development or ALLOW_PROD_SEED=true.")
     sys.exit(1)
 
 

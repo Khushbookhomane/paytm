@@ -32,7 +32,11 @@ export default function EmailMagicLinkForm({
         method: "POST",
         body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
-      // Console mode: backend returns verify_url directly — redirect immediately
+      // Console mode: backend returns token directly — build verify URL from current origin
+      if (data?.token) {
+        router.push(`/auth/verify?token=${data.token}`);
+        return;
+      }
       if (data?.verify_url) {
         router.push(data.verify_url);
         return;

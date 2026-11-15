@@ -42,7 +42,9 @@ function SignInContent() {
         method: "POST",
         body: JSON.stringify({ email: "demo@venture.ai" }),
       });
-      if (data?.verify_url) {
+      if (data?.token) {
+        router.push(`/auth/verify?token=${data.token}`);
+      } else if (data?.verify_url) {
         router.push(data.verify_url);
       } else {
         router.replace("/verify-email?email=demo@venture.ai");

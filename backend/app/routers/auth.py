@@ -168,9 +168,9 @@ def request_magic_link(req: MagicLinkRequest, db: Session = Depends(get_db)):
     except Exception as exc:
         logger.error("Failed to send magic link email: %s", exc)
 
-    # In console mode return the verify URL directly so demo works without email
+    # In console mode return the token directly so frontend builds verify URL
     if settings.EMAIL_PROVIDER.lower() == "console":
-        return {"message": "If an account exists, a sign-in link has been sent to your email.", "verify_url": magic_url}
+        return {"message": "If an account exists, a sign-in link has been sent to your email.", "verify_url": magic_url, "token": raw_token}
 
     return {"message": "If an account exists, a sign-in link has been sent to your email."}
 
