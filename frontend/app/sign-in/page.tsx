@@ -38,11 +38,15 @@ function SignInContent() {
     setDemoLoading(true);
     setErrorMsg(null);
     try {
-      await apiRequest("/auth/magic-link/request", {
+      const data: any = await apiRequest("/auth/magic-link/request", {
         method: "POST",
         body: JSON.stringify({ email: "demo@venture.ai" }),
       });
-      router.replace("/verify-email?email=demo@venture.ai");
+      if (data?.verify_url) {
+        router.push(data.verify_url);
+      } else {
+        router.replace("/verify-email?email=demo@venture.ai");
+      }
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to send magic link.");
     } finally {

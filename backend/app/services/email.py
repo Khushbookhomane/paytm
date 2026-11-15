@@ -32,14 +32,13 @@ def _send(to: str, subject: str, html: str) -> None:
     elif provider == "resend":
         _send_resend(to, subject, html)
     else:
-        # Console fallback — safe for development
+        # Console fallback — logs magic link to server logs
         logger.info("[EMAIL:console] To=%s | Subject=%s", to, subject)
-        # Print the magic link URL only in non-production
-        if not settings.is_production:
-            import re
-            urls = re.findall(r'href="([^"]+)"', html)
-            for url in urls:
-                logger.info("[EMAIL:console] Link: %s", url)
+        import re
+        urls = re.findall(r'href="([^"]+)"', html)
+        for url in urls:
+            logger.info("[EMAIL:console] Link: %s", url)
+        print(f"[MAGIC LINK] To={to} | Link={urls[0] if urls else 'N/A'}", flush=True)
 
 
 def _send_ses(to: str, subject: str, html: str) -> None:

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Mail, ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
 import { apiRequest } from "@/lib/api";
 
@@ -16,6 +17,7 @@ export default function EmailMagicLinkForm({
   buttonText = "Continue with Email",
   onSuccess,
 }: EmailMagicLinkFormProps) {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -26,10 +28,15 @@ export default function EmailMagicLinkForm({
     setLoading(true);
     setError(null);
     try {
-      await apiRequest("/auth/magic-link/request", {
+      const data: any = await apiRequest("/auth/magic-link/request", {
         method: "POST",
         body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
+      // Console mode: backend returns verify_url directly — redirect immediately
+      if (data?.verify_url) {
+        router.push(data.verify_url);
+        return;
+      }
       setSent(true);
       if (onSuccess) onSuccess(email.trim());
     } catch (err: any) {
