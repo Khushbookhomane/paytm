@@ -15,7 +15,11 @@ if db_url.startswith("sqlite:///"):
         else:
             db_url = f"sqlite:///{(BACKEND_DIR / p.name).resolve().as_posix()}"
 
-# SQLite configuration with thread-safe settings for FastAPI
+# Force psycopg2 driver for PostgreSQL URLs
+if db_url.startswith("postgresql://") or db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+
 engine = create_engine(
     db_url,
     connect_args={"check_same_thread": False} if db_url.startswith("sqlite") else {},
