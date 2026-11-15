@@ -1,0 +1,94 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --paytm-blue: #00BAF2;
+  --paytm-dark: #002E6E;
+  --paytm-navy: #042B62;
+  --paytm-teal: #00E0D6;
+  --paytm-light: #E8F8FE;
+  --paytm-bg: #F4F6F9;
+  --foreground-rgb: 15, 23, 42;
+  --background-rgb: 244, 246, 249;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background-color: rgb(var(--background-rgb));
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* Hide scrollbars for clean mobile feel */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Paytm card elevation */
+.paytm-card {
+  background: #ffffff;
+  border-radius: 1rem;
+  box-shadow: 0 2px 8px -2px rgba(0, 46, 110, 0.08), 0 1px 4px -1px rgba(0, 0, 0, 0.04);
+}
+
+.paytm-card-hover {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.paytm-card-hover:active {
+  transform: scale(0.97);
+  box-shadow: 0 1px 4px -1px rgba(0, 46, 110, 0.12);
+}
+
+/* Paytm blue gradient header */
+.paytm-header {
+  background: linear-gradient(135deg, #002E6E 0%, #003d8f 60%, #00519e 100%);
+}
+
+/* Paytm primary button */
+.paytm-btn-primary {
+  background: linear-gradient(135deg, #00BAF2 0%, #00a3d4 100%);
+  color: white;
+  font-weight: 700;
+  border-radius: 0.75rem;
+  transition: all 0.15s ease;
+}
+.paytm-btn-primary:active {
+  transform: scale(0.97);
+  background: linear-gradient(135deg, #0099cc 0%, #0088bb 100%);
+}
+
+/* Paytm logo wordmark style */
+.paytm-wordmark {
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  color: white;
+}
+.paytm-wordmark span {
+  color: #00BAF2;
+}
+
+/* Active nav indicator */
+.paytm-nav-active {
+  color: #00BAF2;
+  position: relative;
+}
+.paytm-nav-active::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #00BAF2;
+}

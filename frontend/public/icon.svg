@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="112" fill="#002E6E"/>
+  <!-- Paytm-style "P" lettermark -->
+  <text x="256" y="340" font-family="Arial Black, Arial" font-weight="900" font-size="280" fill="#00BAF2" text-anchor="middle">P</text>
+  <!-- Blue accent dot -->
+  <circle cx="370" cy="155" r="38" fill="#00E0D6"/>
+</svg>

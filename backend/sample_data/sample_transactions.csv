@@ -1,0 +1,7 @@
+date,product_name,category,qty,price,payment_mode
+2026-11-13 09:15:00,Amul Taaza Milk 500ml,Dairy,2,27.0,UPI
+2026-11-13 10:20:00,Britannia Daily Bread 400g,Bakery,1,40.0,CASH
+2026-11-13 11:45:00,Tata Tea Premium 250g,Beverages,1,140.0,UPI
+2026-11-13 14:10:00,Thums Up 750ml,Cold Drinks,3,45.0,UPI
+2026-11-13 17:30:00,Parle-G Biscuits 250g,Snacks,4,25.0,UPI
+2026-11-13 19:05:00,Aashirvaad Atta 5kg,Grains & Staples,1,245.0,CARD

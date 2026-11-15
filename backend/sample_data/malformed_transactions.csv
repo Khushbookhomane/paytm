@@ -1,0 +1,3 @@
+date,product_name,category,qty,price,payment_mode
+2026-11-13 09:15:00,Amul Taaza Milk 500ml,Dairy,INVALID_QTY,27.0,UPI
+2026-99-99 10:20:00,Britannia Daily Bread 400g,Bakery,1,-40.0,CASH
