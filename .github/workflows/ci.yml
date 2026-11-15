@@ -30,7 +30,19 @@ jobs:
           ENCRYPTION_KEY: Kn7EZqtspqA79DKYxwsvE93FB7uyWSOSBhEuwaRXXYw=
           APP_ENV: development
           FRONTEND_URL: http://localhost:3000
+          BACKEND_URL: http://localhost:8000
           ALLOWED_ORIGINS: http://localhost:3000
+          MERCHANT_TIMEZONE: Asia/Kolkata
+          EMAIL_PROVIDER: console
+          EMAIL_FROM: noreply@ventureai.in
+          LLM_MODEL: claude-3-5-sonnet-20241022
+          CASHFREE_ENVIRONMENT: sandbox
+          ACCOUNT_AGGREGATOR_PROVIDER: setu
+          AA_ENVIRONMENT: sandbox
+          PAYTM_API_BASE_URL: https://securegw-stage.paytm.in
+          RP_ID: localhost
+          RP_NAME: Paytm VentureAI
+          RP_ORIGIN: http://localhost:3000
         run: pytest tests/ -v --tb=short
 
   frontend-build:
@@ -48,9 +60,9 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Build
         env:
-          NEXT_PUBLIC_API_URL: https://placeholder.onrender.com/api
+          NEXT_PUBLIC_API_URL: https://paytm-ventureai-backend.onrender.com/api
         run: npm run build
