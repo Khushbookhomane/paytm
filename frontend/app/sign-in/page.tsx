@@ -38,14 +38,13 @@ function SignInContent() {
     setDemoLoading(true);
     setErrorMsg(null);
     try {
-      const data = await apiRequest<AuthResponse>("/auth/login", {
+      await apiRequest("/auth/magic-link/request", {
         method: "POST",
-        body: JSON.stringify({ email: "demo@venture.ai", password: "demo123" }),
+        body: JSON.stringify({ email: "demo@venture.ai" }),
       });
-      storeAuthResponse(data);
-      router.replace("/home");
+      router.replace("/verify-email?email=demo@venture.ai");
     } catch (err: any) {
-      setErrorMsg(err.message || "Failed to log in with demo account.");
+      setErrorMsg(err.message || "Failed to send magic link.");
     } finally {
       setDemoLoading(false);
     }
@@ -56,14 +55,13 @@ function SignInContent() {
     setPasswordLoading(true);
     setErrorMsg(null);
     try {
-      const data = await apiRequest<AuthResponse>("/auth/login", {
+      await apiRequest("/auth/magic-link/request", {
         method: "POST",
-        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
-      storeAuthResponse(data);
-      router.replace("/home");
+      router.replace(`/verify-email?email=${encodeURIComponent(email.trim().toLowerCase())}`);
     } catch (err: any) {
-      setErrorMsg(err.message || "Invalid credentials. Please try again.");
+      setErrorMsg(err.message || "Failed to send magic link.");
     } finally {
       setPasswordLoading(false);
     }
@@ -110,7 +108,7 @@ function SignInContent() {
           ) : (
             <>
               <Store className="w-4 h-4 text-[#00BAF2]" />
-              <span>1-Click Demo Login (demo@venture.ai)</span>
+              <span>Demo Login — Send Magic Link</span>
             </>
           )}
         </button>
