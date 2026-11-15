@@ -119,7 +119,10 @@ def create_organization(body: OrgCreate, current_user: User = Depends(get_curren
 
     existing = _get_user_org(current_user, db)
     if existing:
-        org = existing
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An organization already exists for this account.",
+        )
         org.legal_name = body.legal_name.strip()
         org.trading_name = (body.trading_name or body.legal_name).strip()
         org.name = org.trading_name

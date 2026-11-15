@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import Header from "@/components/Header";
-import Navigation from "@/components/Navigation";
-import { apiRequest, authStorage } from "@/lib/api";
+import React, { useEffect, useState, useRef, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import AppLayout from "@/components/AppLayout";
+import { apiRequest, authStorage, Merchant } from "@/lib/api";
 import { translations, Language } from "@/lib/translations";
 import {
   Mic,
@@ -12,11 +13,20 @@ import {
   Volume2,
   VolumeX,
   Sparkles,
-  Bot,
+  BotMessageSquare,
   User,
-  Database,
-  ArrowRight,
   RotateCcw,
+  Globe,
+  ArrowRight,
+  TrendingUp,
+  PackageCheck,
+  Megaphone,
+  ShoppingBag,
+  ExternalLink,
+  CheckCircle2,
+  Clock,
+  Layers,
+  HelpCircle,
 } from "lucide-react";
 
 interface Message {
@@ -24,48 +34,78 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   toolsUsed?: string[];
+  toolResults?: Record<string, any>;
+  followUps?: string[];
+  actionButton?: { label: string; url: string };
   timestamp: string;
 }
 
-interface CopilotResponse {
+interface CopilotApiResponse {
   reply: string;
   language: string;
   tools_used: string[];
   tool_results: Record<string, any>;
+  follow_ups?: string[];
+  action_button?: { label: string; url: string };
 }
 
-export default function CopilotPage() {
+function CopilotChatInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [lang, setLang] = useState<Language>("hi");
+  const [merchant, setMerchant] = useState<Merchant | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+
+  // Suggested prompts
+  const suggestedPrompts = [
+    { text: "Aaj meri total sale kitni hui?", lang: "hi", icon: TrendingUp },
+    { text: "Why are my sales decreasing?", lang: "en", icon: HelpCircle },
+    { text: "Which products should I reorder?", lang: "en", icon: PackageCheck },
+    { text: "How can I increase my monthly revenue?", lang: "en", icon: Sparkles },
+    { text: "Mere business ke liye marketing strategy banao.", lang: "hi", icon: Megaphone },
+    { text: "Which customers are not returning?", lang: "en", icon: User },
+    { text: "Give me a weekly business performance report.", lang: "en", icon: Layers },
+    { text: "आजची विक्री किती झाली आणि नफा किती?", lang: "mr", icon: TrendingUp },
+  ];
 
   useEffect(() => {
     const savedLang = authStorage.getLanguage();
     setLang(savedLang);
+    const m = authStorage.getMerchant();
+    setMerchant(m);
 
-    // Initial greeting message
+    // Initial Welcome Message
+    const storeName = m?.name || "Sharma General Store";
     const initialGreeting =
       savedLang === "hi"
-        ? "नमस्ते शर्मा जी! 🙏 मैं आपका Paytm VentureAI कोपायलट हूँ। आज की बिक्री, स्टॉक की स्थिति या ग्राहकों के बारे में कुछ भी पूछें या माइक दबाकर बोलें।"
+        ? `नमस्ते ${storeName}! 🙏 मैं आपका Paytm VentureAI बिज़नेस पार्टनर हूँ। आज की बिक्री, स्टॉक की स्थिति, मुनाफ़ा या ग्राहकों के बारे में कुछ भी पूछें या माइक दबाकर बोलें।`
         : savedLang === "mr"
-        ? "नमस्कार शर्मा जी! 🙏 मी तुमचा Paytm VentureAI सहाय्यक आहे. आजची विक्री, साठा किंवा ग्राहकांविषयी काहीही विचारा किंवा माइक दाबून बोला."
-        : "Hello Sharma Ji! 🙏 I am your Paytm VentureAI Copilot. Ask me anything about today's sales, stock levels, or customer offers using text or voice.";
+        ? `नमस्कार ${storeName}! 🙏 मी तुमचा Paytm VentureAI व्यवसाय सहाय्यक आहे. आजची विक्री, साठा किंवा ग्राहकांविषयी काहीही विचारा किंवा माईक दाबून बोला.`
+        : `Hello ${storeName}! 🙏 I am your Paytm VentureAI Business Partner. Ask me anything about sales trends, low-stock reorders, customer retention, or profit margins in English, Hindi, or Marathi.`;
 
     setMessages([
       {
-        id: "init-1",
+        id: "msg-welcome",
         role: "assistant",
         content: initialGreeting,
+        followUps: [
+          "Aaj meri total sale kitni hui?",
+          "Which products should I reorder?",
+          "Why are my sales decreasing?",
+        ],
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       },
     ]);
 
-    // Setup Web Speech API SpeechRecognition
+    // Setup Web Speech Recognition
     if (typeof window !== "undefined") {
       const SpeechRecognition =
         (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -79,21 +119,21 @@ export default function CopilotPage() {
           const transcript = event.results[0][0].transcript;
           if (transcript) {
             setInput(transcript);
-            handleSendMessage(transcript);
+            handleSend(transcript);
           }
           setIsListening(false);
         };
 
-        recognition.onerror = () => {
-          setIsListening(false);
-        };
-
-        recognition.onend = () => {
-          setIsListening(false);
-        };
-
+        recognition.onerror = () => setIsListening(false);
+        recognition.onend = () => setIsListening(false);
         recognitionRef.current = recognition;
       }
+    }
+
+    // Check if query passed in URL parameter (e.g. from top bar search)
+    const initialQuery = searchParams.get("q");
+    if (initialQuery) {
+      setTimeout(() => handleSend(initialQuery), 300);
     }
   }, []);
 
@@ -101,38 +141,11 @@ export default function CopilotPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  const handleLanguageChange = (newLang: Language) => {
-    setLang(newLang);
-    authStorage.setLanguage(newLang);
-    if (recognitionRef.current) {
-      recognitionRef.current.lang =
-        newLang === "hi" ? "hi-IN" : newLang === "mr" ? "mr-IN" : "en-IN";
-    }
-  };
-
-  const speakText = (text: string) => {
-    if (!voiceEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) {
-      return;
-    }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    const langCode = lang === "hi" ? "hi-IN" : lang === "mr" ? "mr-IN" : "en-IN";
-    utterance.lang = langCode;
-    utterance.rate = 0.95;
-
-    const voices = window.speechSynthesis.getVoices();
-    const match = voices.find((v) => v.lang.startsWith(langCode.slice(0, 2)));
-    if (match) utterance.voice = match;
-
-    window.speechSynthesis.speak(utterance);
-  };
-
-  const toggleMic = () => {
+  const toggleListening = () => {
     if (!recognitionRef.current) {
-      alert("Voice recognition is not supported on this browser.");
+      alert("Speech recognition is not supported in this browser. Please type your query.");
       return;
     }
-
     if (isListening) {
       recognitionRef.current.stop();
       setIsListening(false);
@@ -141,50 +154,64 @@ export default function CopilotPage() {
         recognitionRef.current.lang = lang === "hi" ? "hi-IN" : lang === "mr" ? "mr-IN" : "en-IN";
         recognitionRef.current.start();
         setIsListening(true);
-      } catch (err) {
+      } catch {
         setIsListening(false);
       }
     }
   };
 
-  const handleSendMessage = async (queryText?: string) => {
-    const text = (queryText || input).trim();
-    if (!text || loading) return;
+  const handleSend = async (messageText?: string) => {
+    const textToSend = (messageText || input).trim();
+    if (!textToSend || loading) return;
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
+    const userMsg: Message = {
+      id: `user-${Date.now()}`,
       role: "user",
-      content: text,
+      content: textToSend,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
 
     try {
-      const res = await apiRequest<CopilotResponse>("/copilot/chat", {
+      const res = await apiRequest<CopilotApiResponse>("/copilot/chat", {
         method: "POST",
-        body: JSON.stringify({ message: text, language: lang }),
+        body: JSON.stringify({
+          message: textToSend,
+          language: lang,
+        }),
       });
 
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+      const assistantMsg: Message = {
+        id: `ai-${Date.now()}`,
         role: "assistant",
         content: res.reply,
         toolsUsed: res.tools_used,
+        toolResults: res.tool_results,
+        followUps: res.follow_ups,
+        actionButton: res.action_button,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       };
 
-      setMessages((prev) => [...prev, assistantMessage]);
-      speakText(res.reply);
+      setMessages((prev) => [...prev, assistantMsg]);
+
+      // Read aloud via TTS if voiceEnabled
+      if (voiceEnabled && typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(res.reply.replace(/[*#]/g, ""));
+        utterance.lang = res.language === "hi" ? "hi-IN" : res.language === "mr" ? "mr-IN" : "en-IN";
+        utterance.rate = 1.0;
+        window.speechSynthesis.speak(utterance);
+      }
     } catch (err: any) {
       setMessages((prev) => [
         ...prev,
         {
-          id: (Date.now() + 1).toString(),
+          id: `err-${Date.now()}`,
           role: "assistant",
-          content: "क्षमा करें, अनुरोध प्रोसेस करने में त्रुटि हुई। कृपया पुनः प्रयास करें।",
+          content: "Sorry, I had trouble analyzing that business request. Please verify your connection and try again.",
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
@@ -193,179 +220,268 @@ export default function CopilotPage() {
     }
   };
 
-  const t = translations[lang];
-
-  const quickPrompts = [
-    { label: "आज की बिक्री कितनी हुई?", text: "आज की कुल बिक्री और मुनाफा कितना हुआ?" },
-    { label: "What should I restock?", text: "What items are running low on stock and need restock?" },
-    { label: "Which customers to message?", text: "Which regular customers have stopped visiting and need a message?" },
-    { label: "दुकान का शुद्ध मुनाफा बताओ", text: "दुकान का शुद्ध मुनाफा और खर्चे का विवरण बताओ" },
-  ];
+  const handleClearHistory = () => {
+    if (confirm("Clear conversation history and start a fresh session?")) {
+      const storeName = merchant?.name || "Sharma General Store";
+      setMessages([
+        {
+          id: `msg-fresh-${Date.now()}`,
+          role: "assistant",
+          content: `New conversation started for **${storeName}**. How can I help you grow today?`,
+          followUps: ["Aaj meri total sale kitni hui?", "Which products should I reorder?"],
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
+    }
+  };
 
   return (
-    <div className="flex-1 flex flex-col justify-between h-screen">
-      <Header currentLang={lang} onLanguageChange={handleLanguageChange} />
+    <AppLayout activePageTitle="AI Business Copilot">
+      <div className="flex flex-col h-[calc(100vh-140px)] max-h-[820px] rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
+        {/* ============================================================ */}
+        {/* COPILOT CHAT HEADER                                          */}
+        {/* ============================================================ */}
+        <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#00BAF2] via-[#0099cc] to-[#002E6E] flex items-center justify-center text-white shadow-md shadow-sky-500/20">
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <h2 className="font-extrabold text-sm text-slate-900 dark:text-white leading-none">
+                  VentureAI Copilot
+                </h2>
+                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                  Data-Backed
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                Understands Hindi, Marathi, Hinglish & English
+              </p>
+            </div>
+          </div>
 
-      {/* Sub-bar with Voice & Verification info */}
-      <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between text-xs">
-        <div className="flex items-center gap-1.5 text-slate-600 font-semibold">
-          <Database className="w-3.5 h-3.5 text-[#00BAF2]" />
-          <span>{t.copilot.toolsBadge}</span>
+          <div className="flex items-center gap-2">
+            {/* Language Pill */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg px-2 py-1 text-xs font-semibold">
+              <Globe className="w-3 h-3 text-[#00BAF2] mr-1" />
+              <select
+                value={lang}
+                onChange={(e) => setLang(e.target.value as Language)}
+                className="bg-transparent text-[11px] font-bold outline-none cursor-pointer"
+              >
+                <option value="hi" className="dark:bg-slate-900">हिन्दी</option>
+                <option value="en" className="dark:bg-slate-900">English</option>
+                <option value="mr" className="dark:bg-slate-900">मराठी</option>
+              </select>
+            </div>
+
+            {/* Voice Read Aloud Toggle */}
+            <button
+              onClick={() => {
+                if (voiceEnabled && typeof window !== "undefined" && "speechSynthesis" in window) {
+                  window.speechSynthesis.cancel();
+                }
+                setVoiceEnabled(!voiceEnabled);
+              }}
+              title={voiceEnabled ? "Mute Voice Responses" : "Enable Voice Read-Aloud"}
+              className={`p-1.5 rounded-lg border text-xs font-semibold transition ${
+                voiceEnabled
+                  ? "bg-sky-50 dark:bg-sky-950 text-[#00BAF2] border-sky-200 dark:border-sky-800"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700"
+              }`}
+            >
+              {voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+
+            {/* Reset / New Chat */}
+            <button
+              onClick={handleClearHistory}
+              title="Start New Conversation"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
-        <button
-          onClick={() => setVoiceEnabled(!voiceEnabled)}
-          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
-            voiceEnabled
-              ? "bg-[#E8F8FE] text-[#002E6E] border border-[#00BAF2]/30"
-              : "bg-slate-100 text-slate-500"
-          }`}
-        >
-          {voiceEnabled ? (
-            <>
-              <Volume2 className="w-3.5 h-3.5 text-[#00BAF2]" />
-              <span>Voice ON</span>
-            </>
-          ) : (
-            <>
-              <VolumeX className="w-3.5 h-3.5" />
-              <span>Voice OFF</span>
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* Messages Scroll Area */}
-      <main className="flex-1 p-4 space-y-3.5 overflow-y-auto no-scrollbar">
-        {messages.map((m) => {
-          const isUser = m.role === "user";
-
-          return (
-            <div
-              key={m.id}
-              className={`flex items-start gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}
-            >
+        {/* ============================================================ */}
+        {/* MESSAGES SCROLL CONTAINER                                    */}
+        {/* ============================================================ */}
+        <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-4">
+          {messages.map((msg) => {
+            const isUser = msg.role === "user";
+            return (
               <div
-                className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${
-                  isUser
-                    ? "bg-[#002E6E] text-white"
-                    : "bg-[#00BAF2] text-white shadow-sm"
-                }`}
+                key={msg.id}
+                className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}
               >
-                {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
-              </div>
-
-              <div
-                className={`max-w-[82%] rounded-2xl p-3.5 space-y-1.5 ${
-                  isUser
-                    ? "bg-[#002E6E] text-white rounded-tr-none shadow-sm"
-                    : "bg-white text-slate-900 border border-slate-200/80 rounded-tl-none shadow-sm"
-                }`}
-              >
-                <p className="text-xs leading-relaxed font-medium whitespace-pre-wrap">
-                  {m.content}
-                </p>
-
-                {/* Tool Badges */}
-                {m.toolsUsed && m.toolsUsed.length > 0 && (
-                  <div className="pt-1.5 border-t border-slate-100 flex flex-wrap gap-1">
-                    {m.toolsUsed.map((tool) => (
-                      <span
-                        key={tool}
-                        className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-0.5"
-                      >
-                        <span>✓</span>
-                        <span>{tool}</span>
-                      </span>
-                    ))}
+                {!isUser && (
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#00BAF2] to-[#002E6E] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                    <BotMessageSquare className="w-4 h-4" />
                   </div>
                 )}
 
-                <span
-                  className={`block text-[9px] text-right font-medium ${
-                    isUser ? "text-sky-200" : "text-slate-400"
-                  }`}
-                >
-                  {m.timestamp}
-                </span>
+                <div className={`max-w-xl space-y-2 ${isUser ? "items-end" : "items-start"}`}>
+                  <div
+                    className={`p-4 rounded-2xl text-xs lg:text-sm leading-relaxed whitespace-pre-line shadow-sm ${
+                      isUser
+                        ? "bg-[#002E6E] text-white rounded-tr-none font-medium"
+                        : "bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 rounded-tl-none border border-slate-200/60 dark:border-slate-800"
+                    }`}
+                  >
+                    {msg.content}
+                  </div>
+
+                  {/* Render verified tool call badge & Action Button */}
+                  {!isUser && (
+                    <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                      {msg.toolsUsed && msg.toolsUsed.length > 0 && (
+                        <div className="flex items-center gap-1 text-[10px] text-slate-400 bg-slate-50 dark:bg-slate-900 px-2 py-0.5 rounded-md border border-slate-200/60 dark:border-slate-800">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                          <span>Data verified from: {msg.toolsUsed.join(", ")}</span>
+                        </div>
+                      )}
+
+                      {msg.actionButton && (
+                        <Link
+                          href={msg.actionButton.url}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#00BAF2] hover:bg-[#0099cc] text-white text-[11px] font-bold shadow-sm transition active:scale-95"
+                        >
+                          <span>{msg.actionButton.label}</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </Link>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Render Suggested Follow-up Questions */}
+                  {!isUser && msg.followUps && msg.followUps.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {msg.followUps.map((q, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => handleSend(q)}
+                          className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:text-[#00BAF2] dark:hover:text-[#00BAF2] bg-white dark:bg-slate-800/80 hover:bg-sky-50 dark:hover:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 transition"
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <span className="text-[10px] text-slate-400 block px-1">
+                    {msg.timestamp}
+                  </span>
+                </div>
+
+                {isUser && (
+                  <div className="w-8 h-8 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">
+                    {(merchant?.name || "S").charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* AI Thinking Animation */}
+          {loading && (
+            <div className="flex gap-3 justify-start">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#00BAF2] to-[#002E6E] text-white flex items-center justify-center shrink-0 shadow-sm animate-pulse">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div className="p-4 rounded-2xl rounded-tl-none bg-slate-100 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                <div className="flex gap-1">
+                  <span className="w-2 h-2 rounded-full bg-[#00BAF2] animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="w-2 h-2 rounded-full bg-[#00BAF2] animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <span className="w-2 h-2 rounded-full bg-[#00BAF2] animate-bounce" style={{ animationDelay: "300ms" }} />
+                </div>
+                <span>Analyzing Paytm transactions & stock levels...</span>
               </div>
             </div>
-          );
-        })}
+          )}
 
-        {/* Typing indicator */}
-        {loading && (
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-[#00BAF2] text-white flex items-center justify-center shrink-0">
-              <Bot className="w-4 h-4" />
-            </div>
-            <div className="p-3 rounded-2xl bg-white border border-slate-200 rounded-tl-none flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-[#00BAF2] animate-bounce" />
-              <span className="w-2 h-2 rounded-full bg-[#002E6E] animate-bounce [animation-delay:0.2s]" />
-              <span className="w-2 h-2 rounded-full bg-[#00BAF2] animate-bounce [animation-delay:0.4s]" />
-              <span className="text-[10px] text-slate-500 font-bold ml-1">Analyzing store data...</span>
-            </div>
-          </div>
-        )}
+          <div ref={messagesEndRef} />
+        </div>
 
-        <div ref={messagesEndRef} />
-      </main>
+        {/* ============================================================ */}
+        {/* SUGGESTED PROMPT PILLS                                       */}
+        {/* ============================================================ */}
+        <div className="px-4 py-2 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/40 overflow-x-auto no-scrollbar flex items-center gap-2">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
+            <Sparkles className="w-3 h-3 text-[#00BAF2]" />
+            Suggestions:
+          </span>
+          {suggestedPrompts.map((p, idx) => {
+            const Icon = p.icon;
+            return (
+              <button
+                key={idx}
+                onClick={() => handleSend(p.text)}
+                className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-[#00BAF2] dark:hover:text-[#00BAF2] bg-white dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm whitespace-nowrap shrink-0 hover:border-[#00BAF2] transition flex items-center gap-1.5"
+              >
+                <Icon className="w-3 h-3 text-[#00BAF2]" />
+                <span>{p.text}</span>
+              </button>
+            );
+          })}
+        </div>
 
-      {/* Suggested Quick Prompts Pills */}
-      <div className="px-3 py-1.5 bg-slate-50 border-t border-slate-200 flex gap-1.5 overflow-x-auto no-scrollbar">
-        {quickPrompts.map((qp, idx) => (
-          <button
-            key={idx}
-            onClick={() => handleSendMessage(qp.text)}
-            className="px-2.5 py-1 rounded-full bg-white border border-slate-200 hover:border-[#00BAF2] text-slate-700 text-[10px] font-bold shrink-0 active:scale-95 transition shadow-2xs"
-          >
-            {qp.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Input Bar with Voice Mic */}
-      <div className="bg-white border-t border-slate-200 p-3 flex items-center gap-2">
-        {/* Large Mic Button */}
-        <button
-          onClick={toggleMic}
-          className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition shadow-md active:scale-95 ${
-            isListening
-              ? "bg-rose-600 text-white animate-pulse ring-4 ring-rose-200"
-              : "bg-[#00BAF2] hover:bg-[#00a3d4] text-white"
-          }`}
-          title={isListening ? "Listening... Tap to stop" : "Tap to Speak (en-IN, hi-IN, mr-IN)"}
-        >
-          {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-        </button>
-
-        {/* Text Input */}
+        {/* ============================================================ */}
+        {/* CHAT INPUT FORM & VOICE UI                                   */}
+        {/* ============================================================ */}
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            handleSendMessage();
+            handleSend();
           }}
-          className="flex-1 flex items-center gap-1.5"
+          className="p-3 lg:p-4 border-t border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#0c1324] flex items-center gap-2"
         >
+          {/* Mic Button */}
+          <button
+            type="button"
+            onClick={toggleListening}
+            className={`p-2.5 rounded-xl transition shadow-sm ${
+              isListening
+                ? "bg-rose-500 text-white animate-pulse"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-sky-50 dark:hover:bg-slate-700 hover:text-[#00BAF2]"
+            }`}
+            title={isListening ? "Listening... click to stop" : "Click to speak in Hindi/Marathi/English"}
+          >
+            {isListening ? <Mic className="w-5 h-5 text-white" /> : <Mic className="w-5 h-5" />}
+          </button>
+
+          {/* Text Input */}
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={isListening ? t.copilot.listening : t.copilot.placeholder}
-            className="flex-1 px-3.5 py-2.5 text-xs rounded-xl bg-slate-100 border border-transparent focus:bg-white focus:border-[#00BAF2] focus:outline-none transition"
+            placeholder={
+              isListening
+                ? "Listening... speak now..."
+                : "Ask anything (e.g. Aaj meri total sale kitni hui? / Reorder stock)..."
+            }
+            className="flex-1 bg-slate-100 dark:bg-slate-900 text-xs lg:text-sm text-slate-900 dark:text-slate-100 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-[#00BAF2]/30 transition"
           />
 
+          {/* Send Button */}
           <button
             type="submit"
             disabled={!input.trim() || loading}
-            className="w-10 h-10 rounded-xl bg-[#002E6E] hover:bg-[#002252] disabled:opacity-40 text-white flex items-center justify-center shrink-0 active:scale-95 transition"
+            className="p-2.5 rounded-xl bg-[#00BAF2] hover:bg-[#0099cc] disabled:bg-slate-200 dark:disabled:bg-slate-800 text-white disabled:text-slate-400 font-bold transition shadow-sm shadow-sky-500/20 active:scale-95"
           >
-            <Send className="w-4 h-4" />
+            <Send className="w-5 h-5" />
           </button>
         </form>
       </div>
+    </AppLayout>
+  );
+}
 
-      <Navigation currentLang={lang} />
-    </div>
+export default function CopilotPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-slate-400">Loading AI Business Copilot...</div>}>
+      <CopilotChatInner />
+    </Suspense>
   );
 }

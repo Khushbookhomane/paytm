@@ -1,335 +1,476 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import React, { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import Header from "@/components/Header";
-import Navigation from "@/components/Navigation";
-import ProGateCard from "@/components/ProGateCard";
+import AppLayout from "@/components/AppLayout";
 import { apiRequest, authStorage, Merchant } from "@/lib/api";
-import { translations, Language } from "@/lib/translations";
+import { Language } from "@/lib/translations";
 import {
-  Send,
+  Megaphone,
   Sparkles,
+  Send,
   Copy,
   Check,
-  Share2,
-  AlertCircle,
+  Calendar,
+  Users,
   Tag,
-  Target,
-  Globe,
-  Percent,
+  Share2,
+  Smartphone,
+  Eye,
+  CheckCircle2,
+  Clock,
+  ThumbsUp,
+  ShoppingBag,
 } from "lucide-react";
 
-interface Variant {
+interface CampaignItem {
   id: number;
-  text: string;
-  character_count: number;
-  suggested_channel: string;
-}
-
-interface MarketingResponse {
-  variants: Variant[];
-  language: string;
-  segment: string;
-  goal: string;
+  title: string;
+  target_segment: string;
+  channel: string;
+  content: string;
+  offer_code?: string;
+  discount_pct?: number;
+  status: "draft" | "approved" | "sent";
+  sent_at?: string;
+  metrics?: { delivered?: number; read?: number; redeemed?: number; revenue_generated?: number };
 }
 
 function MarketingContent() {
   const searchParams = useSearchParams();
   const [lang, setLang] = useState<Language>("hi");
-
-  const [segment, setSegment] = useState("At-risk");
-  const [goal, setGoal] = useState("win_back");
-  const [msgLang, setMsgLang] = useState<Language>("hi");
-  const [product, setProduct] = useState("");
-  const [discount, setDiscount] = useState(10);
-
-  const [variants, setVariants] = useState<Variant[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<number | null>(null);
   const [merchant, setMerchant] = useState<Merchant | null>(null);
 
-  useEffect(() => {
-    const savedLang = authStorage.getLanguage();
-    setLang(savedLang);
-    setMsgLang(savedLang);
-    setMerchant(authStorage.getMerchant());
+  // Form State
+  const [targetSegment, setTargetSegment] = useState<string>("at_risk");
+  const [campaignGoal, setCampaignGoal] = useState<string>("win_back");
+  const [campaignLang, setCampaignLang] = useState<string>("hi");
+  const [discountPct, setDiscountPct] = useState<number>(10);
+  const [productFocus, setProductFocus] = useState<string>("Basmati Rice & Cooking Oil");
 
+  // Output State
+  const [generatedDraft, setGeneratedDraft] = useState<string>("");
+  const [generatedTitle, setGeneratedTitle] = useState<string>("");
+  const [offerCode, setOfferCode] = useState<string>("WELCOME10");
+  const [socialCaption, setSocialCaption] = useState<string>("");
+  const [generating, setGenerating] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [campaignsList, setCampaignsList] = useState<CampaignItem[]>([]);
+  const [approvalStatus, setApprovalStatus] = useState<"draft" | "approved" | "sent">("draft");
+
+  useEffect(() => {
+    const l = authStorage.getLanguage();
+    setLang(l);
+    setCampaignLang(l);
+    const m = authStorage.getMerchant();
+    setMerchant(m);
+
+    // Initial check for URL query params (e.g. from customer click)
     const segParam = searchParams.get("segment");
     const goalParam = searchParams.get("goal");
-    if (segParam) setSegment(segParam);
-    if (goalParam) setGoal(goalParam);
+    if (segParam) setTargetSegment(segParam);
+    if (goalParam) setCampaignGoal(goalParam);
 
-    // Auto-generate initial variants
-    generateCampaign(segParam || "At-risk", goalParam || "win_back", savedLang);
-  }, [searchParams]);
+    loadCampaigns();
+    handleGenerateDraft();
+  }, []);
 
-  const isPro = merchant?.plan?.toLowerCase() === "pro";
-
-  const generateCampaign = async (
-    targetSeg = segment,
-    targetGoal = goal,
-    targetLang = msgLang
-  ) => {
-    setLoading(true);
-    setError(null);
+  const loadCampaigns = async () => {
     try {
-      const res = await apiRequest<MarketingResponse>("/marketing/generate", {
-        method: "POST",
-        body: JSON.stringify({
-          segment: targetSeg,
-          goal: targetGoal,
-          language: targetLang,
-          product: product.trim() || undefined,
-          discount_pct: discount,
-        }),
-      });
-      setVariants(res.variants);
-    } catch (err: any) {
-      setError(err.message || "Failed to generate marketing messages");
-    } finally {
-      setLoading(false);
+      const res = await apiRequest<CampaignItem[]>("/marketing/campaigns");
+      setCampaignsList(res || []);
+    } catch {
+      // fallback
     }
   };
 
-  const handleCopy = (id: number, text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+  const handleGenerateDraft = async () => {
+    setGenerating(true);
+    setApprovalStatus("draft");
+    try {
+      const storeName = merchant?.name || "Sharma General Store";
+      const res = await apiRequest<{ variants: Array<{ title: string; text: string }>; segment: string }>(
+        "/marketing/generate",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            segment: targetSegment,
+            goal: campaignGoal,
+            language: campaignLang,
+            discount_pct: discountPct,
+            product: productFocus,
+          }),
+        }
+      );
+
+      const topVariant = res.variants?.[0];
+      const code = `PAYTM${discountPct}`;
+      setOfferCode(code);
+
+      if (topVariant) {
+        setGeneratedTitle(topVariant.title || "Special Store Savings");
+        setGeneratedDraft(topVariant.text);
+      } else {
+        // Fallback generator
+        const msg =
+          campaignLang === "hi"
+            ? `🙏 नमस्ते! ${storeName} की ओर से आपके लिए विशेष बचत! इस सप्ताहांत ${productFocus} पर पाइए फ्लैट ${discountPct}% की सीधी छूट। काउंटर पर पेटीएम साउंडबॉक्स से पेमेंट करते समय कोड ${code} बताएं। आज ही पधारें!`
+            : campaignLang === "mr"
+            ? `🙏 नमस्कार! ${storeName} कडून तुमच्यासाठी खास ऑफर! या वीकेंडला ${productFocus} खरेदीवर मिळवा फ्लॅट ${discountPct}% सूट. पेटीएम साउंडबॉक्सने पेमेंट करताना कोड ${code} वापरा.`
+            : `🙏 Hello! Special offer from ${storeName}! Get flat ${discountPct}% OFF on ${productFocus} this weekend. Mention code ${code} and pay via Paytm UPI at the counter. Visit today!`;
+        setGeneratedTitle("Special Customer Privilege Offer");
+        setGeneratedDraft(msg);
+      }
+
+      setSocialCaption(
+        `🛒 Exclusive savings at ${storeName}! Flat ${discountPct}% off on daily essentials. Pay via #PaytmSoundbox. #KiranaSavings #PaytmForBusiness`
+      );
+    } catch {
+      // fallback message
+    } finally {
+      setGenerating(false);
+    }
   };
 
-  const handleWhatsAppShare = (text: string) => {
-    const encoded = encodeURIComponent(text);
-    window.open(`https://wa.me/?text=${encoded}`, "_blank");
+  const handleApproveAndSave = async (statusToSet: "approved" | "sent") => {
+    try {
+      const res = await apiRequest<CampaignItem>("/marketing/campaigns", {
+        method: "POST",
+        body: JSON.stringify({
+          title: generatedTitle,
+          target_segment: targetSegment === "at_risk" ? "Inactive / Churning Customers (20)" : "Regular Shoppers",
+          channel: "WhatsApp",
+          content: generatedDraft,
+          offer_code: offerCode,
+          discount_pct: discountPct,
+          status: statusToSet,
+        }),
+      });
+      setApprovalStatus(statusToSet);
+      setCampaignsList((prev) => [res, ...prev]);
+      alert(
+        statusToSet === "sent"
+          ? "Campaign approved and dispatched successfully via WhatsApp Business gateway!"
+          : "Campaign approved and saved to scheduled drafts!"
+      );
+    } catch (err: any) {
+      alert(err.message || "Failed to approve campaign");
+    }
   };
 
-  const t = translations[lang];
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(generatedDraft);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
-    <div className="flex-1 flex flex-col justify-between">
-      <Header currentLang={lang} onLanguageChange={(l) => { setLang(l); authStorage.setLanguage(l); }} />
-
-      <main className="flex-1 p-4 space-y-4 overflow-y-auto no-scrollbar pb-8">
-        {/* Header banner */}
-        <div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-100 text-purple-800 text-[11px] font-bold mb-1">
-            <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-            <span>AI Campaign Studio</span>
+    <AppLayout activePageTitle="AI Marketing Assistant">
+      <div className="space-y-6">
+        {/* Top Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl lg:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+              AI Marketing Automation & WhatsApp Campaigns
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Draft, customize, preview, and approve customer-specific marketing blasts
+            </p>
           </div>
-          <h2 className="text-lg font-black text-slate-900 tracking-tight">
-            {t.marketing.title}
-          </h2>
-          <p className="text-xs text-slate-500">
-            {lang === "en"
-              ? "Generate high-converting WhatsApp & SMS messages under 300 characters"
-              : "300 अक्षरों से कम के प्रभावी व्हाट्सएप व SMS संदेश बनाएं"}
-          </p>
+
+          <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 self-start">
+            Verified WhatsApp API Gateway Ready
+          </span>
         </div>
 
-        {/* Campaign Studio Content or Pro Gate */}
-        {!isPro ? (
-          <ProGateCard
-            featureTitle={lang === "en" ? "AI WhatsApp Campaign Studio" : "एआई व्हाट्सएप कैंपेन स्टूडियो"}
-            featureDesc={lang === "en" ? "Unlock regional multilingual WhatsApp & SMS campaign generator with under 300 characters high-converting copy." : "300 अक्षरों में हिंदी, मराठी और अंग्रेजी में व्हाट्सएप ऑफर्स और वाउचर तैयार करें।"}
-            benefits={[
-              "Instant 1-Click WhatsApp share link (wa.me)",
-              "Vernacular campaign generation in Hindi, Marathi & English",
-              "Optimized copy under 300 chars to maximize SMS & WhatsApp response"
-            ]}
-            lang={lang}
-            onUnlocked={() => {
-              const m = authStorage.getMerchant();
-              setMerchant(m);
-              generateCampaign();
-            }}
-          />
-        ) : (
-          <>
-            {/* Campaign Parameters Form Card */}
-            <div className="paytm-card p-4 space-y-3.5 border border-slate-200">
-          {/* Segment Picker */}
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5">
-              <Target className="w-3.5 h-3.5 text-purple-600" />
-              <span>{t.marketing.selectSegment}</span>
-            </label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {["At-risk", "Regular", "Occasional"].map((seg) => (
-                <button
-                  key={seg}
-                  type="button"
-                  onClick={() => setSegment(seg)}
-                  className={`py-2 px-2 text-xs font-bold rounded-xl border text-center transition ${
-                    segment === seg
-                      ? "bg-purple-600 text-white border-purple-600 shadow-sm"
-                      : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-                  }`}
-                >
-                  {seg === "At-risk"
-                    ? t.customers.atRisk
-                    : seg === "Regular"
-                    ? t.customers.regular
-                    : t.customers.occasional}
-                </button>
-              ))}
-            </div>
-          </div>
+        {/* 2-Column Workspace: Left Configurator / Right Mobile Preview */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* ============================================================ */}
+          {/* LEFT: CAMPAIGN CONFIGURATION (7 Cols)                        */}
+          {/* ============================================================ */}
+          <div className="lg:col-span-7 space-y-5">
+            <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-5 shadow-sm space-y-4">
+              <div className="flex items-center gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
+                <Sparkles className="w-5 h-5 text-[#00BAF2]" />
+                <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                  Campaign Generator Parameters
+                </h3>
+              </div>
 
-          {/* Goal Picker */}
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5">
-              <Tag className="w-3.5 h-3.5 text-purple-600" />
-              <span>{t.marketing.selectGoal}</span>
-            </label>
-            <select
-              value={goal}
-              onChange={(e) => setGoal(e.target.value)}
-              className="w-full px-3 py-2 text-xs font-semibold rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-purple-500"
-            >
-              <option value="win_back">
-                {lang === "en" ? "Win-Back Churned Customers" : "छूटे हुए ग्राहकों को वापस लाएं"}
-              </option>
-              <option value="weekend_special">
-                {lang === "en" ? "Weekend Rush Offer" : "वीकेंड स्पेशल ऑफर (कोल्ड ड्रिंक्स/स्नैक्स)"}
-              </option>
-              <option value="clear_stock">
-                {lang === "en" ? "Clear Slow Stock" : "धीमी गति का स्टॉक निकालें"}
-              </option>
-              <option value="festive">
-                {lang === "en" ? "Festive Grocery Offer" : "त्योहारी किराना ऑफर"}
-              </option>
-              <option value="new_product">
-                {lang === "en" ? "New Product Arrival" : "नया सामान आगमन सूचना"}
-              </option>
-            </select>
-          </div>
+              {/* Target Segment */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-[#00BAF2]" />
+                  Target Customer Segment
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {[
+                    { id: "at_risk", label: "At-Risk Churn (20)", desc: "Absent for 21+ days" },
+                    { id: "regular", label: "Regular VIPs (84)", desc: "Frequent shoppers" },
+                    { id: "all", label: "All Customers (150+)", desc: "Full broadcast" },
+                  ].map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setTargetSegment(s.id)}
+                      className={`p-2.5 rounded-xl border text-left text-xs transition ${
+                        targetSegment === s.id
+                          ? "bg-sky-50 dark:bg-sky-950 border-[#00BAF2] ring-1 ring-[#00BAF2]"
+                          : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800"
+                      }`}
+                    >
+                      <p className="font-bold text-slate-900 dark:text-white">{s.label}</p>
+                      <p className="text-[10px] text-slate-400">{s.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          {/* Language & Discount row */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="flex items-center gap-1 text-[11px] font-bold text-slate-600 mb-1">
-                <Globe className="w-3 h-3 text-slate-400" />
-                <span>{t.marketing.selectLanguage}</span>
-              </label>
-              <select
-                value={msgLang}
-                onChange={(e) => setMsgLang(e.target.value as Language)}
-                className="w-full px-2.5 py-1.5 text-xs font-semibold rounded-xl bg-white border border-slate-200"
+              {/* Campaign Objective */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5 text-[#00BAF2]" />
+                  Campaign Objective / Theme
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { id: "win_back", label: "Win-Back Churn" },
+                    { id: "weekend", label: "Weekend Surge" },
+                    { id: "festival", label: "Festival Special (Diwali)" },
+                    { id: "clearance", label: "Dead-Stock Clearance" },
+                  ].map((g) => (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => setCampaignGoal(g.id)}
+                      className={`p-2 rounded-xl border text-xs font-semibold text-center transition ${
+                        campaignGoal === g.id
+                          ? "bg-[#002E6E] text-white border-[#002E6E] font-bold"
+                          : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300"
+                      }`}
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Discount / Offer & Product Focus */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Discount Incentive
+                  </label>
+                  <select
+                    value={discountPct}
+                    onChange={(e) => setDiscountPct(parseInt(e.target.value))}
+                    className="w-full bg-slate-50 dark:bg-slate-900 text-xs font-semibold p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 outline-none"
+                  >
+                    <option value={5}>Flat 5% OFF</option>
+                    <option value={10}>Flat 10% OFF (Recommended)</option>
+                    <option value={15}>Flat 15% OFF</option>
+                    <option value={20}>Flat 20% Mega Clearance</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Featured Product Category
+                  </label>
+                  <input
+                    type="text"
+                    value={productFocus}
+                    onChange={(e) => setProductFocus(e.target.value)}
+                    placeholder="e.g. Basmati Rice, Cold Drinks"
+                    className="w-full bg-slate-50 dark:bg-slate-900 text-xs p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Language selection */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  Drafting Language
+                </label>
+                <div className="flex gap-2">
+                  {[
+                    { id: "hi", label: "हिन्दी (Hindi)" },
+                    { id: "en", label: "English" },
+                    { id: "mr", label: "मराठी (Marathi)" },
+                  ].map((l) => (
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => setCampaignLang(l.id)}
+                      className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition border ${
+                        campaignLang === l.id
+                          ? "bg-[#00BAF2] text-white border-[#00BAF2]"
+                          : "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800"
+                      }`}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Generate CTA */}
+              <button
+                type="button"
+                onClick={handleGenerateDraft}
+                disabled={generating}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#00BAF2] to-[#0099cc] hover:brightness-105 text-white font-extrabold text-xs shadow-md shadow-sky-500/20 active:scale-95 transition flex items-center justify-center gap-2"
               >
-                <option value="hi">हिन्दी (Hindi)</option>
-                <option value="en">English</option>
-                <option value="mr">मराठी (Marathi)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="flex items-center gap-1 text-[11px] font-bold text-slate-600 mb-1">
-                <Percent className="w-3 h-3 text-slate-400" />
-                <span>Discount / Offer</span>
-              </label>
-              <input
-                type="number"
-                value={discount}
-                onChange={(e) => setDiscount(Number(e.target.value))}
-                min={5}
-                max={50}
-                className="w-full px-2.5 py-1.5 text-xs font-semibold rounded-xl bg-white border border-slate-200"
-              />
-            </div>
-          </div>
-
-          {/* Generate Button */}
-          <button
-            onClick={() => generateCampaign()}
-            disabled={loading}
-            className="w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 active:scale-98 text-white text-xs font-extrabold flex items-center justify-center gap-2 shadow-md transition disabled:opacity-60"
-          >
-            {loading ? (
-              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <>
                 <Sparkles className="w-4 h-4" />
-                <span>{t.marketing.generateBtn}</span>
-              </>
-            )}
-          </button>
-        </div>
+                <span>{generating ? "AI Generating Variants..." : "Generate AI Marketing Draft"}</span>
+              </button>
+            </div>
 
-        {error && (
-          <div className="p-3 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2 text-xs text-red-700">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {/* 3 Generated Variants */}
-        <div className="space-y-3">
-          <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
-            {lang === "en" ? "Ready-to-Send WhatsApp Copies" : "तैयार व्हाट्सएप संदेश"}
-          </h3>
-
-          {variants.map((v) => (
-            <div
-              key={v.id}
-              className="paytm-card p-4 space-y-3 border border-slate-200 bg-white"
-            >
+            {/* Editable Campaign Text Area */}
+            <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-5 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800">
-                  Variant #{v.id}
-                </span>
-                <span className="text-[10px] font-bold text-slate-500">
-                  {v.character_count} / 300 chars
-                </span>
+                <h3 className="font-extrabold text-xs text-slate-900 dark:text-white">
+                  Editable Campaign Copy
+                </h3>
+                <button
+                  onClick={copyToClipboard}
+                  className="flex items-center gap-1 text-[11px] font-bold text-[#00BAF2] hover:underline"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copied ? "Copied!" : "Copy Text"}</span>
+                </button>
               </div>
 
-              {/* Message text bubble styled like WhatsApp chat bubble */}
-              <div className="p-3 rounded-2xl bg-[#E8F8FE]/60 border border-[#00BAF2]/20 text-xs text-slate-800 leading-relaxed font-medium">
-                {v.text}
-              </div>
+              <textarea
+                rows={5}
+                value={generatedDraft}
+                onChange={(e) => setGeneratedDraft(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-900 text-xs lg:text-sm text-slate-900 dark:text-slate-100 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 outline-none leading-relaxed"
+              />
 
-              {/* Actions row: Copy and WhatsApp Share */}
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  onClick={() => handleCopy(v.id, v.text)}
-                  className="flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-xs font-bold text-slate-700 flex items-center justify-center gap-1.5 transition"
-                >
-                  {copiedId === v.id ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-600" />
-                      <span className="text-emerald-700">{t.marketing.copied}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{t.marketing.copyBtn}</span>
-                    </>
-                  )}
-                </button>
+              {/* Explicit Approval Actions */}
+              <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Merchant Approval Required before Sending</span>
+                </div>
 
-                <button
-                  onClick={() => handleWhatsAppShare(v.text)}
-                  className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-xs font-bold text-white flex items-center justify-center gap-1.5 shadow transition"
-                >
-                  <Share2 className="w-3.5 h-3.5" />
-                  <span>{t.marketing.sendWhatsapp}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleApproveAndSave("approved")}
+                    className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs hover:bg-slate-100"
+                  >
+                    Save as Draft
+                  </button>
+                  <button
+                    onClick={() => handleApproveAndSave("sent")}
+                    className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-sm flex items-center gap-1.5 active:scale-95 transition"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Approve & Dispatch via WhatsApp</span>
+                  </button>
+                </div>
               </div>
             </div>
-          ))}
-        </div>
-      </>
-    )}
-  </main>
+          </div>
 
-      <Navigation currentLang={lang} />
-    </div>
+          {/* ============================================================ */}
+          {/* RIGHT: LIVE MOBILE PREVIEW & CAMPAIGN LOG (5 Cols)          */}
+          {/* ============================================================ */}
+          <div className="lg:col-span-5 space-y-5">
+            {/* WhatsApp Phone Mockup Preview */}
+            <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <Smartphone className="w-4 h-4 text-[#00BAF2]" />
+                  Live WhatsApp Message Preview
+                </span>
+                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded-full">
+                  WhatsApp Business
+                </span>
+              </div>
+
+              {/* Phone Frame */}
+              <div className="rounded-2xl bg-[#ECE5DD] dark:bg-[#121b22] p-3 shadow-inner border border-slate-300 dark:border-slate-700 space-y-2">
+                {/* Chat Bubble */}
+                <div className="rounded-2xl rounded-tl-none bg-white dark:bg-[#1f2c34] p-3 text-xs text-slate-900 dark:text-slate-100 shadow-sm max-w-sm space-y-2">
+                  <div className="flex items-center gap-1.5 pb-1 border-b border-slate-100 dark:border-slate-700">
+                    <div className="w-5 h-5 rounded-full bg-[#00BAF2] text-white flex items-center justify-center font-bold text-[10px]">
+                      P
+                    </div>
+                    <span className="font-bold text-[11px] text-[#002E6E] dark:text-[#00BAF2]">
+                      {merchant?.name || "Sharma General Store"}
+                    </span>
+                    <span className="text-[9px] text-slate-400">· Official</span>
+                  </div>
+
+                  <p className="whitespace-pre-line leading-relaxed text-[11px]">
+                    {generatedDraft || "Your AI generated message will appear here..."}
+                  </p>
+
+                  <div className="pt-1 flex items-center justify-between text-[9px] text-slate-400">
+                    <span className="font-mono">Code: {offerCode}</span>
+                    <span>10:30 AM · Delivered</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Social Media Caption Box */}
+              <div className="mt-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800 space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <Share2 className="w-3 h-3 text-[#00BAF2]" />
+                  Social Media Caption (Instagram / WhatsApp Status)
+                </span>
+                <p className="text-xs text-slate-600 dark:text-slate-300">{socialCaption}</p>
+              </div>
+            </div>
+
+            {/* Campaign History Log */}
+            <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-5 shadow-sm space-y-3">
+              <h3 className="text-xs font-extrabold text-slate-900 dark:text-white">
+                Dispatched Campaigns History
+              </h3>
+
+              <div className="space-y-2.5">
+                {campaignsList.map((c) => (
+                  <div
+                    key={c.id}
+                    className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 text-xs space-y-1"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800 dark:text-slate-200">{c.title}</span>
+                      <span
+                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                          c.status === "sent"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-sky-100 text-sky-800"
+                        }`}
+                      >
+                        {c.status.toUpperCase()}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      Channel: {c.channel} · {c.target_segment}
+                    </p>
+                    {c.metrics?.delivered && (
+                      <p className="text-[10px] text-emerald-600 font-semibold pt-1">
+                        ✓ {c.metrics.delivered} delivered · {c.metrics.read} read · ₹{c.metrics.revenue_generated} estimated revenue
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </AppLayout>
   );
 }
 
 export default function MarketingPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-xs">Loading campaign studio...</div>}>
+    <Suspense fallback={<div className="p-8 text-center text-slate-400">Loading Marketing Assistant...</div>}>
       <MarketingContent />
     </Suspense>
   );

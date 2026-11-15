@@ -1,14 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import InventoryPage from "../inventory/page";
 
-export default function StockRedirect() {
-  const router = useRouter();
-
-  useEffect(() => {
-    router.replace("/inventory");
-  }, [router]);
-
-  return null;
+export default function StockRedirectPage() {
+  return <InventoryPage />;
 }

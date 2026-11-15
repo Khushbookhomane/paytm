@@ -1,16 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800", "900"],
-  variable: "--font-inter",
-});
-
 export const metadata: Metadata = {
-  title: "Paytm for Business | VentureAI Copilot",
-  description: "AI business copilot for small Indian merchants — real-time intelligence from your daily UPI & counter sales",
+  title: "VentureAI | Your AI Business Partner · Beyond Payments",
+  description: "AI-powered business management platform designed for Paytm merchants — real-time sales intelligence, inventory forecasting, customer analytics, and proactive AI copilot.",
   manifest: "/manifest.json",
   icons: {
     icon: "/icon.svg",
@@ -32,11 +25,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
-      <body className="bg-[#002E6E] min-h-screen antialiased flex justify-center font-sans">
-        <div className="w-full max-w-md min-h-screen bg-[#F4F6F9] flex flex-col relative shadow-2xl">
-          {children}
-        </div>
+    <html lang="en" suppressHydrationWarning>
+      <body className="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-screen antialiased font-sans transition-colors duration-200">
+        {children}
       </body>
     </html>
   );

@@ -7,6 +7,7 @@ from .routers import (
     marketing, finance, recommendations, copilot, upload,
     organizations, business_verification, bank_verification, integrations,
     imports, webhooks,
+    notifications, growth_score, intelligence, reports,
 )
 
 # Initialise all tables (SQLite dev / Alembic handles prod migrations)
@@ -43,7 +44,7 @@ app.include_router(integrations.router, prefix=settings.API_V1_STR)
 app.include_router(imports.router, prefix=settings.API_V1_STR)
 app.include_router(webhooks.router, prefix=settings.API_V1_STR)
 
-# Existing business modules (preserved)
+# Business operating modules
 app.include_router(dashboard.router, prefix=settings.API_V1_STR)
 app.include_router(sales.router, prefix=settings.API_V1_STR)
 app.include_router(inventory.router, prefix=settings.API_V1_STR)
@@ -54,6 +55,12 @@ app.include_router(recommendations.router, prefix=settings.API_V1_STR)
 app.include_router(copilot.router, prefix=settings.API_V1_STR)
 app.include_router(upload.router, prefix=settings.API_V1_STR)
 
+# VentureAI AI Enterprise Modules
+app.include_router(notifications.router, prefix=settings.API_V1_STR)
+app.include_router(growth_score.router, prefix=settings.API_V1_STR)
+app.include_router(intelligence.router, prefix=settings.API_V1_STR)
+app.include_router(reports.router, prefix=settings.API_V1_STR)
+
 
 @app.get("/health")
 @app.get(f"{settings.API_V1_STR}/health")
@@ -61,7 +68,8 @@ def health_check():
     return {
         "status": "healthy",
         "service": "Paytm VentureAI Backend",
-        "version": "2.0.0",
+        "version": "2.5.0",
+        "product": "VentureAI - Your AI Business Partner. Beyond Payments.",
         "llm_ready": bool(settings.ANTHROPIC_API_KEY.strip()),
         "google_auth": settings.google_configured,
         "bank_verification": settings.cashfree_configured,

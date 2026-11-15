@@ -226,6 +226,8 @@ class CopilotChatResponse(BaseModel):
     language: str
     tools_used: List[str]
     tool_results: Dict[str, Any]
+    follow_ups: Optional[List[str]] = None
+    action_button: Optional[Dict[str, str]] = None
 
 # CSV Upload Schemas
 class CsvUploadResponse(BaseModel):

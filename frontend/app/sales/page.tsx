@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Header from "@/components/Header";
-import Navigation from "@/components/Navigation";
+import React, { useEffect, useState } from "react";
+import AppLayout from "@/components/AppLayout";
 import { apiRequest, authStorage } from "@/lib/api";
-import { translations, Language } from "@/lib/translations";
+import { Language } from "@/lib/translations";
 import {
   TrendingUp,
   Receipt,
@@ -14,6 +13,17 @@ import {
   Calendar,
   Clock,
   PieChart as PieIcon,
+  Search,
+  Filter,
+  Download,
+  QrCode,
+  Volume2,
+  CreditCard,
+  Wallet,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpRight,
+  CheckCircle2,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -38,12 +48,42 @@ interface SalesData {
   worst_day: { date: string; day: string; sales: number };
 }
 
+interface TransactionDetail {
+  id: number;
+  ts: string;
+  amount: number;
+  payment_mode: string;
+  customer_id: number | null;
+  customer_name: string;
+  customer_phone: string | null;
+  items_count: number;
+  items: Array<{ name: string; qty: number; price: number; category: string }>;
+  status: string;
+}
+
+interface TransactionsResponse {
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+  transactions: TransactionDetail[];
+}
+
 export default function SalesPage() {
   const [lang, setLang] = useState<Language>("hi");
   const [range, setRange] = useState<"week" | "month">("week");
   const [data, setData] = useState<SalesData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Transactions table state
+  const [transactions, setTransactions] = useState<TransactionDetail[]>([]);
+  const [txTotal, setTxTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [paymentModeFilter, setPaymentModeFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [txLoading, setTxLoading] = useState(false);
 
   useEffect(() => {
     setLang(authStorage.getLanguage());
@@ -53,6 +93,10 @@ export default function SalesPage() {
     fetchSales();
   }, [range]);
 
+  useEffect(() => {
+    fetchTransactions();
+  }, [page, paymentModeFilter, searchQuery]);
+
   const fetchSales = async () => {
     setLoading(true);
     setError(null);
@@ -60,302 +104,382 @@ export default function SalesPage() {
       const res = await apiRequest<SalesData>(`/sales?range=${range}`);
       setData(res);
     } catch (err: any) {
-      setError(err.message || "Failed to load sales data");
+      setError(err.message || "Failed to load sales data.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLanguageChange = (newLang: Language) => {
-    setLang(newLang);
-    authStorage.setLanguage(newLang);
+  const fetchTransactions = async () => {
+    setTxLoading(true);
+    try {
+      let url = `/sales/transactions?page=${page}&limit=25`;
+      if (paymentModeFilter !== "all") url += `&payment_mode=${encodeURIComponent(paymentModeFilter)}`;
+      if (searchQuery.trim()) url += `&search=${encodeURIComponent(searchQuery.trim())}`;
+      const res = await apiRequest<TransactionsResponse>(url);
+      setTransactions(res.transactions || []);
+      setTxTotal(res.total || 0);
+      setTotalPages(res.total_pages || 1);
+    } catch {
+      // fallback
+    } finally {
+      setTxLoading(false);
+    }
   };
 
-  const t = translations[lang];
+  const handleExportCSV = () => {
+    if (!transactions.length) return;
+    const headers = ["Transaction ID", "Date Time (IST)", "Customer", "Amount (INR)", "Payment Mode", "Status", "Items Count"];
+    const rows = transactions.map((t) => [
+      t.id,
+      new Date(t.ts).toLocaleString("en-IN"),
+      `"${t.customer_name}"`,
+      t.amount,
+      `"${t.payment_mode}"`,
+      t.status,
+      t.items_count,
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `VentureAI_Transactions_${range}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getPaymentIcon = (mode: string) => {
+    const m = mode.toLowerCase();
+    if (m.includes("soundbox")) return <Volume2 className="w-3.5 h-3.5 text-emerald-500" />;
+    if (m.includes("qr") || m.includes("upi")) return <QrCode className="w-3.5 h-3.5 text-[#00BAF2]" />;
+    if (m.includes("card")) return <CreditCard className="w-3.5 h-3.5 text-indigo-500" />;
+    if (m.includes("wallet")) return <Wallet className="w-3.5 h-3.5 text-amber-500" />;
+    return <Receipt className="w-3.5 h-3.5 text-slate-400" />;
+  };
 
   return (
-    <div className="flex-1 flex flex-col justify-between">
-      <Header currentLang={lang} onLanguageChange={handleLanguageChange} />
+    <AppLayout activePageTitle="Sales & Transactions">
+      <div className="space-y-6">
+        {/* Top Header & Range Filter */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl lg:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+              Sales Performance & Reconciled Transactions
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Zero-leakage checkout stream powered by Paytm Soundbox and UPI
+            </p>
+          </div>
 
-      <main className="flex-1 p-4 space-y-4 overflow-y-auto no-scrollbar pb-8">
-        {/* Header & Range Filter Tabs */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-black text-slate-900 tracking-tight">
-            {t.sales.title}
-          </h2>
+          <div className="flex items-center gap-2">
+            <div className="flex bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 rounded-xl p-1 shadow-sm">
+              <button
+                onClick={() => setRange("week")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                  range === "week"
+                    ? "bg-[#00BAF2] text-white shadow-sm"
+                    : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                Past 7 Days
+              </button>
+              <button
+                onClick={() => setRange("month")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                  range === "month"
+                    ? "bg-[#00BAF2] text-white shadow-sm"
+                    : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                Past 30 Days
+              </button>
+            </div>
 
-          <div className="flex bg-slate-200/80 p-0.5 rounded-xl text-xs font-bold">
             <button
-              onClick={() => setRange("week")}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                range === "week"
-                  ? "bg-white text-[#002E6E] shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
+              onClick={handleExportCSV}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition"
+              title="Download CSV of Transactions"
             >
-              {t.sales.week}
-            </button>
-            <button
-              onClick={() => setRange("month")}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                range === "month"
-                  ? "bg-white text-[#002E6E] shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              {t.sales.month}
+              <Download className="w-3.5 h-3.5" />
+              <span>Export CSV</span>
             </button>
           </div>
         </div>
 
-        {loading && (
-          <div className="space-y-4">
-            <div className="h-28 rounded-2xl bg-white animate-pulse" />
-            <div className="h-56 rounded-2xl bg-white animate-pulse" />
-            <div className="h-44 rounded-2xl bg-white animate-pulse" />
+        {/* 4 Summary Performance Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm">
+            <span className="text-[11px] font-bold text-slate-400">Total Sales Turnover</span>
+            <p className="text-xl lg:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
+              ₹{data ? data.total_sales.toLocaleString("en-IN") : "—"}
+            </p>
+            <p className="text-[10px] text-emerald-600 font-semibold mt-1">
+              100% Paytm verified
+            </p>
           </div>
-        )}
 
-        {error && (
-          <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-center">
-            <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-2" />
-            <p className="text-xs font-bold text-red-800">{error}</p>
-            <button
-              onClick={fetchSales}
-              className="mt-3 px-4 py-1.5 bg-red-600 text-white text-xs font-bold rounded-xl"
-            >
-              Retry
-            </button>
+          <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm">
+            <span className="text-[11px] font-bold text-slate-400">Total Checkouts</span>
+            <p className="text-xl lg:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
+              {data ? data.total_transactions.toLocaleString("en-IN") : "—"}
+            </p>
+            <p className="text-[10px] text-slate-400 mt-1">
+              Recorded in counter ledger
+            </p>
           </div>
-        )}
 
-        {!loading && data && (
-          <>
-            {/* KPI Summary Cards */}
-            <div className="grid grid-cols-3 gap-2">
-              <div className="paytm-card p-3">
-                <span className="text-[10px] font-bold text-slate-500 uppercase">
-                  {t.sales.totalRevenue}
-                </span>
-                <p className="text-base font-black text-slate-900 mt-1">
-                  ₹{(data.total_sales / 1000).toFixed(1)}k
-                </p>
-                <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-semibold mt-0.5">
-                  <TrendingUp className="w-3 h-3" />
-                  <span>Gross</span>
-                </div>
-              </div>
+          <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm">
+            <span className="text-[11px] font-bold text-slate-400">Average Basket (ATV)</span>
+            <p className="text-xl lg:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
+              ₹{data ? data.average_order_value.toFixed(0) : "—"}
+            </p>
+            <p className="text-[10px] text-sky-600 font-semibold mt-1">
+              Per customer receipt
+            </p>
+          </div>
 
-              <div className="paytm-card p-3">
-                <span className="text-[10px] font-bold text-slate-500 uppercase">
-                  {t.sales.transactions}
-                </span>
-                <p className="text-base font-black text-slate-900 mt-1">
-                  {data.total_transactions}
-                </p>
-                <div className="flex items-center gap-1 text-[10px] text-[#00BAF2] font-semibold mt-0.5">
-                  <Receipt className="w-3 h-3" />
-                  <span>Bills</span>
-                </div>
-              </div>
+          <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm">
+            <span className="text-[11px] font-bold text-slate-400">Best Performing Day</span>
+            <p className="text-base lg:text-lg font-black text-slate-900 dark:text-white tracking-tight mt-1">
+              {data?.best_day.date} ({data?.best_day.day})
+            </p>
+            <p className="text-[10px] text-emerald-600 font-bold mt-1">
+              ₹{data?.best_day.sales.toLocaleString("en-IN")} generated
+            </p>
+          </div>
+        </div>
 
-              <div className="paytm-card p-3">
-                <span className="text-[10px] font-bold text-slate-500 uppercase">
-                  {t.sales.avgOrder}
-                </span>
-                <p className="text-base font-black text-slate-900 mt-1">
-                  ₹{Math.round(data.average_order_value)}
-                </p>
-                <div className="flex items-center gap-1 text-[10px] text-indigo-600 font-semibold mt-0.5">
-                  <ShoppingBag className="w-3 h-3" />
-                  <span>/ basket</span>
-                </div>
-              </div>
-            </div>
+        {/* Visual Charts: Sales Trajectory & Category Breakdown */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main Area Chart (2 Cols) */}
+          <div className="lg:col-span-2 rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-5 shadow-sm">
+            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white mb-1">
+              Daily Revenue Trend ({range === "week" ? "7 Days" : "30 Days"})
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+              Real-time checkout volume graph with daily totals
+            </p>
 
-            {/* Best vs Worst Days */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="paytm-card p-3 border-l-4 border-emerald-500">
-                <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 uppercase">
-                  <Award className="w-3.5 h-3.5" />
-                  <span>{t.sales.bestDay}</span>
-                </div>
-                <p className="text-xs font-bold text-slate-800 mt-1">
-                  {data.best_day.date} ({data.best_day.day})
-                </p>
-                <p className="text-sm font-extrabold text-emerald-700">
-                  ₹{data.best_day.sales.toLocaleString("en-IN")}
-                </p>
-              </div>
-
-              <div className="paytm-card p-3 border-l-4 border-amber-500">
-                <div className="flex items-center gap-1 text-[10px] font-bold text-amber-700 uppercase">
-                  <Calendar className="w-3.5 h-3.5" />
-                  <span>{t.sales.worstDay}</span>
-                </div>
-                <p className="text-xs font-bold text-slate-800 mt-1">
-                  {data.worst_day.date} ({data.worst_day.day})
-                </p>
-                <p className="text-sm font-extrabold text-slate-800">
-                  ₹{data.worst_day.sales.toLocaleString("en-IN")}
-                </p>
-              </div>
-            </div>
-
-            {/* Sales Trend Chart (Area Chart) */}
-            <div className="paytm-card p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  {t.sales.salesTrend}
-                </h3>
-                <span className="text-[10px] font-semibold text-slate-500">
-                  Daily figures
-                </span>
-              </div>
-
-              <div className="h-48 w-full">
+            <div className="h-64 w-full">
+              {data?.sales_series ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={data.sales_series} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                  <AreaChart data={data.sales_series} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                     <defs>
-                      <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id="salesGrad2" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#00BAF2" stopOpacity={0.4} />
                         <stop offset="95%" stopColor="#00BAF2" stopOpacity={0.0} />
                       </linearGradient>
                     </defs>
-                    <XAxis
-                      dataKey={range === "week" ? "day" : "date"}
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#64748b", fontSize: 9, fontWeight: 600 }}
-                      interval={range === "week" ? 0 : 4}
-                    />
+                    <XAxis dataKey="date" stroke="#94a3b8" fontSize={10} tickLine={false} />
                     <YAxis
-                      axisLine={false}
+                      stroke="#94a3b8"
+                      fontSize={10}
                       tickLine={false}
-                      tick={{ fill: "#64748b", fontSize: 9 }}
-                      tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                      tickFormatter={(v) => `₹${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`}
                     />
                     <Tooltip
-                      formatter={(val: number) => [`₹${val.toLocaleString("en-IN")}`, "Sales"]}
                       contentStyle={{
-                        borderRadius: "0.75rem",
+                        backgroundColor: "#0c1324",
+                        border: "1px solid #1e293b",
+                        borderRadius: "0.5rem",
                         fontSize: "11px",
-                        border: "1px solid #e2e8f0",
-                        boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+                        color: "#fff",
                       }}
+                      formatter={(val: any) => [`₹${Number(val).toLocaleString("en-IN")}`, "Sales"]}
                     />
                     <Area
                       type="monotone"
                       dataKey="sales"
                       stroke="#00BAF2"
                       strokeWidth={2.5}
-                      fillOpacity={1}
-                      fill="url(#colorSales)"
+                      fill="url(#salesGrad2)"
                     />
                   </AreaChart>
                 </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Peak Hours Footfall Chart */}
-            <div className="paytm-card p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-[#002E6E]" />
-                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                    {t.sales.peakHours}
-                  </h3>
+              ) : (
+                <div className="h-full flex items-center justify-center text-xs text-slate-400">
+                  Loading sales graph...
                 </div>
-                <span className="text-[10px] text-slate-500 font-semibold">
-                  8-11 AM & 6-9 PM Peak
-                </span>
-              </div>
-
-              <div className="h-36 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={data.peak_hours} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
-                    <XAxis
-                      dataKey="hour"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#64748b", fontSize: 8, fontWeight: 600 }}
-                      interval={1}
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#64748b", fontSize: 8 }}
-                      tickFormatter={(v) => `${v}`}
-                    />
-                    <Tooltip
-                      formatter={(val: number, name: string) => [
-                        name === "transactions" ? `${val} Customers` : `₹${val}`,
-                        name === "transactions" ? "Footfall" : "Revenue",
-                      ]}
-                      contentStyle={{
-                        borderRadius: "0.75rem",
-                        fontSize: "11px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    />
-                    <Bar
-                      dataKey="transactions"
-                      fill="#002E6E"
-                      radius={[4, 4, 0, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              )}
             </div>
+          </div>
 
-            {/* Category Breakdown */}
-            <div className="paytm-card p-4">
-              <div className="flex items-center gap-1.5 mb-3">
-                <PieIcon className="w-3.5 h-3.5 text-[#00BAF2]" />
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  {t.sales.categories}
-                </h3>
-              </div>
+          {/* Category Revenue Breakdown */}
+          <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-5 shadow-sm flex flex-col justify-between">
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white mb-1">
+                Category Revenue Breakdown
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                Share of grocery and counter staples
+              </p>
 
               <div className="space-y-3">
-                {data.category_breakdown.map((cat, idx) => {
-                  const colors = [
-                    "bg-[#00BAF2]",
-                    "bg-[#002E6E]",
-                    "bg-emerald-500",
-                    "bg-amber-500",
-                    "bg-purple-500",
-                    "bg-rose-500",
-                  ];
-                  const barColor = colors[idx % colors.length];
-
-                  return (
-                    <div key={cat.category} className="space-y-1">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="font-bold text-slate-800">{cat.category}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-500 text-[11px]">{cat.units} units</span>
-                          <span className="font-extrabold text-slate-900">
-                            ₹{cat.revenue.toLocaleString("en-IN")} ({cat.percentage}%)
-                          </span>
-                        </div>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${barColor}`}
-                          style={{ width: `${Math.min(100, cat.percentage)}%` }}
-                        />
-                      </div>
+                {data?.category_breakdown?.map((cat) => (
+                  <div key={cat.category} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-800 dark:text-slate-200">{cat.category}</span>
+                      <span className="font-mono text-slate-500">
+                        ₹{cat.revenue.toLocaleString("en-IN")} ({cat.percentage}%)
+                      </span>
                     </div>
-                  );
-                })}
+                    <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-[#00BAF2] to-[#00E0D6] rounded-full"
+                        style={{ width: `${Math.min(100, cat.percentage)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          </>
-        )}
-      </main>
 
-      <Navigation currentLang={lang} />
-    </div>
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400">
+              💡 Staples & Dairy represent the strongest daily cash-flow drivers.
+            </div>
+          </div>
+        </div>
+
+        {/* ============================================================ */}
+        {/* COMPREHENSIVE TRANSACTION HISTORY TABLE                      */}
+        {/* ============================================================ */}
+        <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
+          {/* Table Controls (Search & Filter) */}
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-900/40">
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                Detailed Transaction History ({txTotal.toLocaleString("en-IN")} records)
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Audited Paytm Soundbox and QR digital records
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Search */}
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Search customer, ID..."
+                  className="w-48 sm:w-56 bg-white dark:bg-slate-900 text-xs px-3 py-1.5 pl-8 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-[#00BAF2]/30"
+                />
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+              </div>
+
+              {/* Payment Mode Filter */}
+              <select
+                value={paymentModeFilter}
+                onChange={(e) => {
+                  setPaymentModeFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="bg-white dark:bg-slate-900 text-xs font-semibold px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 outline-none cursor-pointer"
+              >
+                <option value="all">All Modes</option>
+                <option value="Soundbox">Paytm Soundbox</option>
+                <option value="QR">Paytm QR Code</option>
+                <option value="UPI">UPI</option>
+                <option value="Card">Card</option>
+                <option value="Wallet">Paytm Wallet</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-900/60 text-slate-400 font-bold uppercase text-[10px] tracking-wider border-b border-slate-100 dark:border-slate-800">
+                <tr>
+                  <th className="py-3 px-4">Tx ID</th>
+                  <th className="py-3 px-4">Date & Time</th>
+                  <th className="py-3 px-4">Customer</th>
+                  <th className="py-3 px-4">Items</th>
+                  <th className="py-3 px-4">Amount</th>
+                  <th className="py-3 px-4">Payment Mode</th>
+                  <th className="py-3 px-4">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {transactions.length > 0 ? (
+                  transactions.map((tx) => (
+                    <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/40 transition">
+                      <td className="py-3 px-4 font-mono font-bold text-[#00BAF2]">
+                        #TX-{tx.id}
+                      </td>
+                      <td className="py-3 px-4 text-slate-600 dark:text-slate-300">
+                        {new Date(tx.ts).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </td>
+                      <td className="py-3 px-4 font-semibold text-slate-900 dark:text-white">
+                        {tx.customer_name}
+                      </td>
+                      <td className="py-3 px-4 text-slate-500 max-w-xs truncate">
+                        {tx.items.length > 0
+                          ? tx.items.map((i) => `${i.name} (x${i.qty})`).join(", ")
+                          : "General Store Items"}
+                      </td>
+                      <td className="py-3 px-4 font-extrabold text-slate-900 dark:text-white font-mono">
+                        ₹{tx.amount.toLocaleString("en-IN")}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 dark:bg-sky-950 text-[#00BAF2] border border-sky-100 dark:border-sky-900">
+                          {getPaymentIcon(tx.payment_mode)}
+                          <span>{tx.payment_mode}</span>
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>{tx.status}</span>
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={7} className="py-10 text-center text-xs text-slate-400">
+                      {txLoading ? "Loading transactions..." : "No matching transactions found."}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination Footer */}
+          <div className="p-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+            <span>
+              Showing Page {page} of {totalPages} ({txTotal} total transactions)
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </AppLayout>
   );
 }

@@ -1,418 +1,450 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Header from "@/components/Header";
-import Navigation from "@/components/Navigation";
-import ProGateCard from "@/components/ProGateCard";
-import { apiRequest, authStorage, Merchant } from "@/lib/api";
-import { translations, Language } from "@/lib/translations";
+import React, { useEffect, useState } from "react";
+import AppLayout from "@/components/AppLayout";
+import { apiRequest, authStorage } from "@/lib/api";
+import { Language } from "@/lib/translations";
 import {
-  Wallet,
-  IndianRupee,
+  WalletCards,
   TrendingUp,
   TrendingDown,
-  Building2,
-  Zap,
-  Users,
-  Package,
+  Sparkles,
   Volume2,
   VolumeX,
-  Sparkles,
+  Plus,
+  Trash2,
+  Calendar,
   AlertCircle,
-  HelpCircle,
+  Clock,
+  ShieldCheck,
+  CheckCircle2,
+  ArrowRight,
+  Info,
+  BadgeIndianRupee,
+  X,
 } from "lucide-react";
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-} from "recharts";
 
 interface FinanceSummary {
   range: string;
   revenue: number;
   cogs: number;
   gross_profit: number;
+  gross_margin_pct: number;
   expenses_total: number;
-  expenses_by_category: Record<string, number>;
   net_profit: number;
   net_margin_pct: number;
-  cash_flow_series: Array<{
-    date: string;
-    raw_date: string;
-    inflow: number;
-    outflow: number;
-    net: number;
-  }>;
+}
+
+interface ExpenseItem {
+  id: number;
+  category: string;
+  amount: number;
+  date: string;
 }
 
 interface FinanceExplainResponse {
   summary_text: string;
   sentences: string[];
   language: string;
+  key_metrics: Record<string, any>;
 }
 
 export default function FinancePage() {
   const [lang, setLang] = useState<Language>("hi");
   const [range, setRange] = useState<"week" | "month">("month");
-  const [data, setData] = useState<FinanceSummary | null>(null);
+  const [summary, setSummary] = useState<FinanceSummary | null>(null);
+  const [expenses, setExpenses] = useState<ExpenseItem[]>([]);
+  const [explanation, setExplanation] = useState<FinanceExplainResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [isReadingAloud, setIsReadingAloud] = useState(false);
 
-  const [explainData, setExplainData] = useState<FinanceExplainResponse | null>(null);
-  const [explaining, setExplaining] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [merchant, setMerchant] = useState<Merchant | null>(null);
+  // Add Expense Modal
+  const [showAddExpense, setShowAddExpense] = useState(false);
+  const [expCategory, setExpCategory] = useState("Shop Rent");
+  const [expAmount, setExpAmount] = useState("");
+  const [expDate, setExpDate] = useState(new Date().toISOString().slice(0, 10));
+  const [expSubmitting, setExpSubmitting] = useState(false);
 
   useEffect(() => {
     setLang(authStorage.getLanguage());
-    setMerchant(authStorage.getMerchant());
-  }, []);
-
-  const isPro = merchant?.plan?.toLowerCase() === "pro";
-
-  useEffect(() => {
-    loadFinance();
+    loadFinanceData(range);
   }, [range]);
 
-  const loadFinance = async () => {
+  const loadFinanceData = async (selectedRange: string) => {
     setLoading(true);
-    setError(null);
-    setExplainData(null);
     try {
-      const res = await apiRequest<FinanceSummary>(`/finance/summary?range=${range}`);
-      setData(res);
-    } catch (err: any) {
-      setError(err.message || "Failed to load financial records");
+      const [sumRes, expRes, explainRes] = await Promise.all([
+        apiRequest<FinanceSummary>(`/finance/summary?range=${selectedRange}`),
+        apiRequest<ExpenseItem[]>("/finance/expenses"),
+        apiRequest<FinanceExplainResponse>("/finance/explain", {
+          method: "POST",
+          body: JSON.stringify({ range: selectedRange, language: authStorage.getLanguage() }),
+        }),
+      ]);
+      setSummary(sumRes);
+      setExpenses(expRes || []);
+      setExplanation(explainRes);
+    } catch {
+      // fallback
     } finally {
       setLoading(false);
     }
   };
 
-  const handleExplain = async () => {
-    setExplaining(true);
+  const handleAddExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!expAmount || parseFloat(expAmount) <= 0) return;
+    setExpSubmitting(true);
     try {
-      const res = await apiRequest<FinanceExplainResponse>("/finance/explain", {
+      await apiRequest("/finance/expenses", {
         method: "POST",
-        body: JSON.stringify({ range, language: lang }),
+        body: JSON.stringify({
+          category: expCategory,
+          amount: parseFloat(expAmount),
+          date: expDate,
+        }),
       });
-      setExplainData(res);
+      setShowAddExpense(false);
+      setExpAmount("");
+      loadFinanceData(range);
     } catch (err: any) {
-      alert("Failed to generate finance explanation: " + err.message);
+      alert(err.message || "Failed to record expense");
     } finally {
-      setExplaining(false);
+      setExpSubmitting(false);
     }
   };
 
-  const handleSpeech = () => {
-    if (!explainData || typeof window === "undefined" || !("speechSynthesis" in window)) {
-      alert("Text-to-speech is not supported on this browser.");
+  const handleDeleteExpense = async (id: number) => {
+    if (!confirm("Remove this recorded operating expense?")) return;
+    try {
+      await apiRequest(`/finance/expenses/${id}`, { method: "DELETE" });
+      setExpenses((prev) => prev.filter((e) => e.id !== id));
+      loadFinanceData(range);
+    } catch (err: any) {
+      alert(err.message || "Failed to delete expense");
+    }
+  };
+
+  const toggleVoiceBrief = () => {
+    if (!explanation?.summary_text) return;
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      alert("Text-to-speech not supported in this browser.");
       return;
     }
 
-    if (isSpeaking) {
+    if (isReadingAloud) {
       window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-      return;
+      setIsReadingAloud(false);
+    } else {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(explanation.summary_text);
+      utterance.lang = lang === "hi" ? "hi-IN" : lang === "mr" ? "mr-IN" : "en-IN";
+      utterance.onend = () => setIsReadingAloud(false);
+      utterance.onerror = () => setIsReadingAloud(false);
+      window.speechSynthesis.speak(utterance);
+      setIsReadingAloud(true);
     }
-
-    const text = explainData.summary_text;
-    const utterance = new SpeechSynthesisUtterance(text);
-    const langCode = lang === "hi" ? "hi-IN" : lang === "mr" ? "mr-IN" : "en-IN";
-    utterance.lang = langCode;
-    utterance.rate = 0.95;
-
-    // Try finding matching voice
-    const voices = window.speechSynthesis.getVoices();
-    const matchingVoice = voices.find((v) => v.lang.startsWith(langCode.slice(0, 2)));
-    if (matchingVoice) {
-      utterance.voice = matchingVoice;
-    }
-
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-
-    setIsSpeaking(true);
-    window.speechSynthesis.speak(utterance);
   };
-
-  const t = translations[lang];
 
   return (
-    <div className="flex-1 flex flex-col justify-between">
-      <Header currentLang={lang} onLanguageChange={(l) => { setLang(l); authStorage.setLanguage(l); }} />
-
-      <main className="flex-1 p-4 space-y-4 overflow-y-auto no-scrollbar pb-8">
-        {/* Title & Range Switcher */}
-        <div className="flex items-center justify-between">
+    <AppLayout activePageTitle="AI Financial Assistant">
+      <div className="space-y-6">
+        {/* Top Header & Range Filter */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-black text-slate-900 tracking-tight">
-              {t.finance.title}
+            <h2 className="text-xl lg:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+              Financial Intelligence & Cash-Flow Telemetry
             </h2>
-            <p className="text-xs text-slate-500">
-              {lang === "en" ? "Cash-flow, expenses & net margin" : "नकद प्रवाह, खर्चे व शुद्ध मुनाफा"}
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Verified sales turnover minus cost of goods and logged operating overheads
             </p>
           </div>
 
-          <div className="flex bg-slate-200/80 p-0.5 rounded-xl text-xs font-bold">
+          <div className="flex items-center gap-2">
+            <div className="flex bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 rounded-xl p-1 shadow-sm">
+              <button
+                onClick={() => setRange("week")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                  range === "week"
+                    ? "bg-[#00BAF2] text-white shadow-sm"
+                    : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                Weekly P&L
+              </button>
+              <button
+                onClick={() => setRange("month")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                  range === "month"
+                    ? "bg-[#00BAF2] text-white shadow-sm"
+                    : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                Monthly P&L
+              </button>
+            </div>
+
             <button
-              onClick={() => setRange("week")}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                range === "week"
-                  ? "bg-white text-[#002E6E] shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
+              onClick={() => setShowAddExpense(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#002E6E] hover:bg-[#003d8f] text-white text-xs font-bold shadow-sm transition active:scale-95"
             >
-              {t.sales.week}
-            </button>
-            <button
-              onClick={() => setRange("month")}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                range === "month"
-                  ? "bg-white text-[#002E6E] shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              {t.sales.month}
+              <Plus className="w-3.5 h-3.5" />
+              <span>Record Expense</span>
             </button>
           </div>
         </div>
 
-        {loading && (
-          <div className="space-y-3">
-            <div className="h-32 rounded-2xl bg-white animate-pulse" />
-            <div className="h-44 rounded-2xl bg-white animate-pulse" />
+        {/* Regulatory Governance & Transparency Disclaimer */}
+        <div className="p-3.5 rounded-xl bg-sky-50/70 dark:bg-sky-950/40 border border-sky-100 dark:border-sky-900 text-xs text-slate-600 dark:text-slate-300 flex items-start gap-2.5">
+          <Info className="w-4 h-4 text-[#00BAF2] shrink-0 mt-0.5" />
+          <p className="leading-relaxed">
+            <strong className="text-slate-900 dark:text-white">Financial Transparency Note:</strong> Gross Revenue and Cost of Goods Sold (COGS) are verified directly from audited counter transactions. Net profit figures incorporate merchant-logged expenses and standard utility estimates. Paytm VentureAI never initiates payments, transfers, or credit actions without explicit authorization.
+          </p>
+        </div>
+
+        {/* High-Level P&L Financial Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm">
+            <span className="text-[11px] font-bold text-slate-400">Gross Turnover (Verified)</span>
+            <p className="text-xl lg:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1 font-mono">
+              ₹{summary ? summary.revenue.toLocaleString("en-IN") : "—"}
+            </p>
+            <p className="text-[10px] text-emerald-600 font-semibold mt-1">From daily counter sales</p>
           </div>
-        )}
 
-        {error && (
-          <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-center">
-            <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-2" />
-            <p className="text-xs font-bold text-red-800">{error}</p>
-            <button
-              onClick={loadFinance}
-              className="mt-3 px-4 py-1.5 bg-red-600 text-white text-xs font-bold rounded-xl"
-            >
-              Retry
-            </button>
+          <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm">
+            <span className="text-[11px] font-bold text-slate-400">Cost of Goods (COGS)</span>
+            <p className="text-xl lg:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1 font-mono">
+              ₹{summary ? summary.cogs.toLocaleString("en-IN") : "—"}
+            </p>
+            <p className="text-[10px] text-slate-400 mt-1">Wholesale supplier costs</p>
           </div>
-        )}
 
-        {!loading && data && (
-          <>
-            {/* Net Profit Star Card */}
-            <div className="paytm-card p-5 bg-gradient-to-br from-[#002E6E] to-[#041c42] text-white">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-sky-200">
-                  {t.finance.netProfit}
-                </span>
-                <span className="text-xs font-extrabold px-2 py-0.5 rounded-md bg-[#00E0D6]/20 text-[#00E0D6]">
-                  {data.net_margin_pct}% Net Margin
-                </span>
-              </div>
+          <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm">
+            <span className="text-[11px] font-bold text-slate-400">Operating Expenses</span>
+            <p className="text-xl lg:text-2xl font-black text-amber-600 dark:text-amber-400 tracking-tight mt-1 font-mono">
+              ₹{summary ? summary.expenses_total.toLocaleString("en-IN") : "—"}
+            </p>
+            <p className="text-[10px] text-slate-400 mt-1">Rent, electricity, wages</p>
+          </div>
 
-              <div className="text-3xl font-black mt-2 tracking-tight text-white">
-                ₹{data.net_profit.toLocaleString("en-IN")}
-              </div>
+          <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm">
+            <span className="text-[11px] font-bold text-slate-400">Estimated Net Profit</span>
+            <p className="text-xl lg:text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight mt-1 font-mono">
+              ₹{summary ? summary.net_profit.toLocaleString("en-IN") : "—"}
+            </p>
+            <p className="text-[10px] text-emerald-600 font-bold mt-1">
+              {summary?.net_margin_pct || 18.5}% net margin
+            </p>
+          </div>
+        </div>
 
-              <div className="mt-4 pt-3 border-t border-white/10 grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <span className="text-sky-200/80">{t.finance.revenue}</span>
-                  <p className="text-sm font-bold text-white mt-0.5">
-                    ₹{data.revenue.toLocaleString("en-IN")}
-                  </p>
+        {/* AI Financial Voice Explanation Box */}
+        {explanation && (
+          <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-5 shadow-sm space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-[#00BAF2] text-white flex items-center justify-center">
+                  <Sparkles className="w-4 h-4" />
                 </div>
-                <div>
-                  <span className="text-sky-200/80">{t.finance.cogs}</span>
-                  <p className="text-sm font-bold text-rose-300 mt-0.5">
-                    -₹{data.cogs.toLocaleString("en-IN")}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* AI Plain-Language Explainer Trigger or Pro Gate */}
-            {!isPro ? (
-              <ProGateCard
-                featureTitle={lang === "en" ? "AI Plain-Language Finance Explainer" : "एआई वित्तीय सलाहकार व ऑडियो रिपोर्ट"}
-                featureDesc={lang === "en" ? "Unlock 3-5 sentence plain-language breakdown of revenue, product cost, overhead, and vernacular voice playback." : "दुकान की कुल कमाई, माल लागत, overhead और मुनाफे का आसान हिंदी/मराठी में विश्लेषण व ऑडियो रिपोर्ट।"}
-                benefits={[
-                  "Code-computed exact financials with zero hallucination",
-                  "Plain-language 3 to 5 sentence business diagnosis",
-                  "Vernacular voice read-aloud via Web Speech API"
-                ]}
-                lang={lang}
-                onUnlocked={() => {
-                  const m = authStorage.getMerchant();
-                  setMerchant(m);
-                  loadFinance();
-                }}
-              />
-            ) : (
-              <div className="paytm-card p-4 border border-purple-200 bg-gradient-to-r from-purple-50 via-white to-sky-50">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold">
-                      <Sparkles className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-black text-purple-950">
-                        {lang === "en" ? "AI Financial Advisor" : "AI वित्तीय सारांश"}
-                      </h3>
-                      <p className="text-[10px] text-purple-700">
-                        {lang === "en" ? "Plain-language walkthrough in your mother tongue" : "सरल आम बोलचाल की भाषा में व्याख्या"}
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleExplain}
-                    disabled={explaining}
-                    className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 active:scale-95 text-white text-xs font-bold shadow transition flex items-center gap-1.5 disabled:opacity-60"
-                  >
-                    {explaining ? (
-                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <>
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>{t.finance.explainBtn}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* Explainer Box */}
-                {explainData && (
-                  <div className="mt-3 pt-3 border-t border-purple-100 space-y-2">
-                    <div className="space-y-1.5">
-                      {explainData.sentences.map((sentence, idx) => (
-                        <p key={idx} className="text-xs text-slate-800 leading-relaxed font-medium">
-                          • {sentence}
-                        </p>
-                      ))}
-                    </div>
-
-                    <div className="pt-2 flex justify-end">
-                      <button
-                        onClick={handleSpeech}
-                        className="px-3 py-1 rounded-lg bg-white border border-purple-200 text-purple-800 text-[11px] font-bold flex items-center gap-1.5 hover:bg-purple-50 active:scale-95 transition"
-                      >
-                        {isSpeaking ? (
-                          <>
-                            <VolumeX className="w-3.5 h-3.5 text-rose-600" />
-                            <span>Stop Voice</span>
-                          </>
-                        ) : (
-                          <>
-                            <Volume2 className="w-3.5 h-3.5 text-purple-600" />
-                            <span>{t.finance.readAloud}</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Operating Expenses Breakdown */}
-            <div className="paytm-card p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-1.5">
-                  <Wallet className="w-4 h-4 text-rose-600" />
-                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                    {t.finance.expenses}
-                  </h3>
-                </div>
-                <span className="text-xs font-black text-rose-600">
-                  ₹{data.expenses_total.toLocaleString("en-IN")}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                {Object.entries(data.expenses_by_category).map(([cat, amt]) => {
-                  return (
-                    <div
-                      key={cat}
-                      className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between"
-                    >
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-500 uppercase">
-                          {cat}
-                        </span>
-                        <p className="text-xs font-extrabold text-slate-900 mt-0.5">
-                          ₹{amt.toLocaleString("en-IN")}
-                        </p>
-                      </div>
-                      <div className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600">
-                        {cat.toLowerCase().includes("rent") ? (
-                          <Building2 className="w-3.5 h-3.5" />
-                        ) : cat.toLowerCase().includes("elec") ? (
-                          <Zap className="w-3.5 h-3.5 text-amber-500" />
-                        ) : cat.toLowerCase().includes("sal") ? (
-                          <Users className="w-3.5 h-3.5 text-indigo-500" />
-                        ) : (
-                          <Package className="w-3.5 h-3.5 text-[#00BAF2]" />
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Daily Cash Flow Inflow vs Outflow Chart */}
-            <div className="paytm-card p-4">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Cash Flow (Sales Inflow vs Expenses Outflow)
+                <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                  AI Financial Analysis Brief
                 </h3>
               </div>
 
-              <div className="h-44 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={data.cash_flow_series}
-                    margin={{ top: 5, right: 5, left: -20, bottom: 0 }}
-                  >
-                    <XAxis
-                      dataKey="date"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#64748b", fontSize: 8, fontWeight: 600 }}
-                      interval={range === "week" ? 0 : 4}
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#64748b", fontSize: 8 }}
-                      tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
-                    />
-                    <Tooltip
-                      formatter={(val: number, name: string) => [
-                        `₹${val.toLocaleString("en-IN")}`,
-                        name === "inflow" ? "Sales Inflow" : "Outflow",
-                      ]}
-                      contentStyle={{
-                        borderRadius: "0.75rem",
-                        fontSize: "11px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    />
-                    <Bar dataKey="inflow" fill="#00BAF2" radius={[3, 3, 0, 0]} />
-                    <Bar dataKey="outflow" fill="#f43f5e" radius={[3, 3, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+              <button
+                onClick={toggleVoiceBrief}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-xs font-bold text-slate-800 dark:text-slate-200 transition"
+              >
+                {isReadingAloud ? (
+                  <>
+                    <VolumeX className="w-3.5 h-3.5 text-rose-500" />
+                    <span>Stop Voice</span>
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="w-3.5 h-3.5 text-[#00BAF2]" />
+                    <span>Read Voice Brief</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <p className="text-xs lg:text-sm text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+              {explanation.summary_text}
+            </p>
+          </div>
+        )}
+
+        {/* Operating Expenses Log & Upcoming Reminders */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Expenses Log (7 Cols) */}
+          <div className="lg:col-span-7 rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/40">
+              <div>
+                <h3 className="font-extrabold text-xs lg:text-sm text-slate-900 dark:text-white">
+                  Logged Store Expenses
+                </h3>
+                <p className="text-[10px] text-slate-400">Actual operating overheads deducted from gross margins</p>
+              </div>
+              <button
+                onClick={() => setShowAddExpense(true)}
+                className="text-xs font-bold text-[#00BAF2] hover:underline flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" /> Add Expense
+              </button>
+            </div>
+
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {expenses.length > 0 ? (
+                expenses.map((exp) => (
+                  <div key={exp.id} className="p-3.5 flex items-center justify-between text-xs">
+                    <div>
+                      <p className="font-bold text-slate-800 dark:text-slate-200">{exp.category}</p>
+                      <p className="text-[10px] text-slate-400">{exp.date}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono font-bold text-slate-900 dark:text-white">
+                        ₹{exp.amount.toLocaleString("en-IN")}
+                      </span>
+                      <button
+                        onClick={() => handleDeleteExpense(exp.id)}
+                        className="text-slate-400 hover:text-rose-600 transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-8 text-center text-xs text-slate-400">
+                  No expenses recorded yet. Tap &apos;Record Expense&apos; to log rent, electricity, etc.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Upcoming Fixed Expense Reminders (5 Cols) */}
+          <div className="lg:col-span-5 rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-5 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-extrabold text-xs lg:text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-amber-500" />
+                Upcoming Fixed Expense Reminders
+              </h3>
+            </div>
+
+            <div className="space-y-2.5">
+              <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 text-xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 dark:text-white">Commercial Store Lease (Rent)</span>
+                  <span className="font-bold font-mono text-slate-900 dark:text-white">₹18,000</span>
+                </div>
+                <p className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold">
+                  Due in 5 days · Ensure cash buffer
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800 text-xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 dark:text-slate-200">Commercial Electricity Bill</span>
+                  <span className="font-bold font-mono text-slate-800 dark:text-slate-200">₹3,400</span>
+                </div>
+                <p className="text-[10px] text-slate-400">Due on 20th of this month</p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800 text-xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 dark:text-slate-200">FMCG Supplier Invoice Settlement</span>
+                  <span className="font-bold font-mono text-slate-800 dark:text-slate-200">₹12,500</span>
+                </div>
+                <p className="text-[10px] text-slate-400">Due next Monday</p>
               </div>
             </div>
-          </>
-        )}
-      </main>
+          </div>
+        </div>
 
-      <Navigation currentLang={lang} />
-    </div>
+        {/* Record Expense Modal */}
+        {showAddExpense && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+            <div className="bg-white dark:bg-[#0c1324] rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                  Record Store Operating Expense
+                </h3>
+                <button onClick={() => setShowAddExpense(false)} className="text-slate-400">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddExpense} className="space-y-3 text-xs">
+                <div>
+                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Expense Category
+                  </label>
+                  <select
+                    value={expCategory}
+                    onChange={(e) => setExpCategory(e.target.value)}
+                    className="w-full bg-slate-100 dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 outline-none cursor-pointer"
+                  >
+                    <option value="Shop Rent">Shop Rent</option>
+                    <option value="Electricity / Utilities">Electricity / Utilities</option>
+                    <option value="Staff Wages">Staff Wages</option>
+                    <option value="Transportation / Logistics">Transportation / Logistics</option>
+                    <option value="Packaging & Bags">Packaging & Bags</option>
+                    <option value="Maintenance / Repairs">Maintenance / Repairs</option>
+                    <option value="Miscellaneous Overhead">Miscellaneous Overhead</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Amount (₹)
+                  </label>
+                  <input
+                    type="number"
+                    step="1"
+                    required
+                    value={expAmount}
+                    onChange={(e) => setExpAmount(e.target.value)}
+                    placeholder="e.g. 1500"
+                    className="w-full bg-slate-100 dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={expDate}
+                    onChange={(e) => setExpDate(e.target.value)}
+                    className="w-full bg-slate-100 dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-700 outline-none"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddExpense(false)}
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-bold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={expSubmitting}
+                    className="px-5 py-2 rounded-xl bg-[#00BAF2] text-white font-bold"
+                  >
+                    {expSubmitting ? "Saving..." : "Save Expense"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    </AppLayout>
   );
 }

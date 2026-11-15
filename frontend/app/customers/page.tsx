@@ -1,24 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Header from "@/components/Header";
-import Navigation from "@/components/Navigation";
-import ProGateCard from "@/components/ProGateCard";
-import { apiRequest, authStorage, Merchant } from "@/lib/api";
-import { translations, Language } from "@/lib/translations";
+import Link from "next/link";
+import AppLayout from "@/components/AppLayout";
+import { apiRequest, authStorage } from "@/lib/api";
+import { Language } from "@/lib/translations";
 import {
   Users,
-  Search,
-  AlertCircle,
-  PhoneCall,
-  Calendar,
-  IndianRupee,
-  ShoppingBag,
-  Send,
   UserCheck,
-  UserMinus,
+  UserX,
   Sparkles,
+  Search,
+  Send,
+  ArrowRight,
+  TrendingUp,
+  AlertTriangle,
+  BadgeIndianRupee,
+  ShoppingBag,
+  Calendar,
+  Lock,
+  Phone,
+  Filter,
 } from "lucide-react";
 
 interface CustomerItem {
@@ -31,18 +34,15 @@ interface CustomerItem {
   total_spend: number;
   avg_bill: number;
   segment: "Regular" | "Occasional" | "At-risk";
-  churn_risk: boolean;
-  reason: string;
 }
 
 interface SegmentSummary {
   segment: string;
   count: number;
   percentage: number;
-  description: string;
 }
 
-interface CustomerResponse {
+interface CustomerSegmentsResponse {
   summary: SegmentSummary[];
   customers: CustomerItem[];
 }
@@ -50,262 +50,278 @@ interface CustomerResponse {
 export default function CustomersPage() {
   const router = useRouter();
   const [lang, setLang] = useState<Language>("hi");
-  const [data, setData] = useState<CustomerResponse | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("At-risk");
-  const [search, setSearch] = useState("");
+  const [data, setData] = useState<CustomerSegmentsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [merchant, setMerchant] = useState<Merchant | null>(null);
+
+  const [activeSegment, setActiveSegment] = useState<string>("all");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     setLang(authStorage.getLanguage());
-    setMerchant(authStorage.getMerchant());
-    loadCustomers();
+    fetchCustomers();
   }, []);
 
-  const isPro = merchant?.plan?.toLowerCase() === "pro";
-
-  const loadCustomers = async () => {
+  const fetchCustomers = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiRequest<CustomerResponse>("/customers/segments");
+      const res = await apiRequest<CustomerSegmentsResponse>("/customers/segments");
       setData(res);
     } catch (err: any) {
-      setError(err.message || "Failed to load customer segments");
+      setError(err.message || "Failed to load customer profiles");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLanguageChange = (newLang: Language) => {
-    setLang(newLang);
-    authStorage.setLanguage(newLang);
-  };
+  const customersList = data?.customers || [];
+  const totalCustomers = customersList.length;
 
-  const t = translations[lang];
+  const regularCount = customersList.filter((c) => c.segment === "Regular").length;
+  const occasionalCount = customersList.filter((c) => c.segment === "Occasional").length;
+  const atRiskCount = customersList.filter((c) => c.segment === "At-risk").length;
+  const repeatRate = totalCustomers > 0 ? Math.round((regularCount / totalCustomers) * 100) : 0;
+  const avgCLV = totalCustomers > 0 ? Math.round(customersList.reduce((acc, c) => acc + c.total_spend, 0) / totalCustomers) : 0;
 
-  const handleSendOffer = (segment: string, customerName?: string) => {
-    const goal = segment === "At-risk" ? "win_back" : "weekend_special";
-    router.push(`/marketing?segment=${encodeURIComponent(segment)}&goal=${goal}`);
-  };
-
-  const filteredCustomers = (data?.customers || []).filter((c) => {
-    const matchesTab = c.segment === activeTab;
+  const filteredCustomers = customersList.filter((c) => {
     const matchesSearch =
       c.name.toLowerCase().includes(search.toLowerCase()) ||
       c.phone_masked.includes(search);
-    return matchesTab && matchesSearch;
+    const matchesSeg = activeSegment === "all" || c.segment === activeSegment;
+    return matchesSearch && matchesSeg;
   });
 
-  const getSegmentLabel = (seg: string) => {
-    if (seg === "Regular") return t.customers.regular;
-    if (seg === "Occasional") return t.customers.occasional;
-    return t.customers.atRisk;
+  const getSegmentBadge = (seg: string) => {
+    switch (seg) {
+      case "Regular":
+        return "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800";
+      case "At-risk":
+        return "bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800";
+      default:
+        return "bg-sky-100 dark:bg-sky-950 text-[#00BAF2] border-sky-200 dark:border-sky-800";
+    }
   };
 
   return (
-    <div className="flex-1 flex flex-col justify-between">
-      <Header currentLang={lang} onLanguageChange={handleLanguageChange} />
-
-      <main className="flex-1 p-4 space-y-4 overflow-y-auto no-scrollbar pb-8">
-        {/* Title & Headline */}
-        <div className="flex items-center justify-between">
+    <AppLayout activePageTitle="Customer Intelligence">
+      <div className="space-y-6">
+        {/* Top Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-black text-slate-900 tracking-tight">
-              {t.customers.title}
+            <h2 className="text-xl lg:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+              Customer RFM Intelligence & Retention
             </h2>
-            <p className="text-xs text-slate-500">
-              {data ? `${data.customers.length} total shoppers analyzed` : "Loading..."}
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Privacy-safe customer habit analytics derived from daily counter checkouts
             </p>
           </div>
-          <button
-            onClick={() => handleSendOffer(activeTab)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 text-white text-xs font-bold active:scale-95 shadow transition"
+
+          <Link
+            href="/marketing"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#00BAF2] hover:bg-[#0099cc] text-white text-xs font-bold shadow-md shadow-sky-500/20 active:scale-95 transition self-start sm:self-auto"
           >
             <Send className="w-3.5 h-3.5" />
-            <span>{t.customers.sendOffer}</span>
+            <span>Launch WhatsApp Campaign</span>
+          </Link>
+        </div>
+
+        {/* AI Retention Opportunity Banner */}
+        {atRiskCount > 0 && (
+          <div className="rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50/60 dark:from-slate-900 dark:to-amber-950/20 border border-amber-200/80 dark:border-amber-900/60 p-4 lg:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center font-bold text-xs">
+                  ⚠️
+                </span>
+                <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                  Customer Retention Alert: {atRiskCount} Inactive Regular Shoppers Detected
+                </h3>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 max-w-3xl">
+                Your repeat customer rate has decreased this month. {atRiskCount} customers who used to visit 4+ times monthly haven&apos;t visited in over 21 days.
+              </p>
+            </div>
+
+            <Link
+              href="/marketing?segment=at_risk&goal=win_back"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shrink-0 transition shadow-sm active:scale-95"
+            >
+              <span>Draft Win-Back Offer</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        )}
+
+        {/* 4 Customer Intelligence Metric Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm">
+            <span className="text-[11px] font-bold text-slate-400">Total Tracked Customers</span>
+            <p className="text-xl lg:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
+              {totalCustomers} Profiles
+            </p>
+            <p className="text-[10px] text-slate-400 mt-1">Encrypted phone identities</p>
+          </div>
+
+          <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm">
+            <span className="text-[11px] font-bold text-slate-400">Repeat Shopper Ratio</span>
+            <p className="text-xl lg:text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight mt-1">
+              {repeatRate}%
+            </p>
+            <p className="text-[10px] text-slate-400 mt-1">{regularCount} loyal recurring families</p>
+          </div>
+
+          <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm">
+            <span className="text-[11px] font-bold text-slate-400">Customer Lifetime Value (CLV)</span>
+            <p className="text-xl lg:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
+              ₹{avgCLV.toLocaleString("en-IN")}
+            </p>
+            <p className="text-[10px] text-sky-600 font-semibold mt-1">Average cumulative spend</p>
+          </div>
+
+          <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 p-4 shadow-sm">
+            <span className="text-[11px] font-bold text-slate-400">At-Risk Churn Count</span>
+            <p className="text-xl lg:text-2xl font-black text-rose-600 dark:text-rose-400 tracking-tight mt-1">
+              {atRiskCount} Shoppers
+            </p>
+            <p className="text-[10px] text-rose-500 font-semibold mt-1">Paused visits for 21+ days</p>
+          </div>
+        </div>
+
+        {/* RFM Segmentation Pills Filter */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setActiveSegment("all")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+              activeSegment === "all"
+                ? "bg-[#00BAF2] text-white shadow-sm"
+                : "bg-white dark:bg-[#0c1324] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800"
+            }`}
+          >
+            All Customers ({totalCustomers})
+          </button>
+          <button
+            onClick={() => setActiveSegment("Regular")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+              activeSegment === "Regular"
+                ? "bg-emerald-600 text-white shadow-sm"
+                : "bg-white dark:bg-[#0c1324] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800"
+            }`}
+          >
+            Regular Loyalists ({regularCount})
+          </button>
+          <button
+            onClick={() => setActiveSegment("Occasional")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+              activeSegment === "Occasional"
+                ? "bg-sky-600 text-white shadow-sm"
+                : "bg-white dark:bg-[#0c1324] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800"
+            }`}
+          >
+            Occasional Buyers ({occasionalCount})
+          </button>
+          <button
+            onClick={() => setActiveSegment("At-risk")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+              activeSegment === "At-risk"
+                ? "bg-rose-600 text-white shadow-sm"
+                : "bg-white dark:bg-[#0c1324] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800"
+            }`}
+          >
+            At-Risk Churn ({atRiskCount})
           </button>
         </div>
 
-        {/* Loading */}
-        {loading && (
-          <div className="space-y-3">
-            <div className="h-20 rounded-2xl bg-white animate-pulse" />
-            <div className="h-44 rounded-2xl bg-white animate-pulse" />
-            <div className="h-44 rounded-2xl bg-white animate-pulse" />
-          </div>
-        )}
-
-        {/* Error */}
-        {error && (
-          <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-center">
-            <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-2" />
-            <p className="text-xs font-bold text-red-800">{error}</p>
-            <button
-              onClick={loadCustomers}
-              className="mt-3 px-4 py-1.5 bg-red-600 text-white text-xs font-bold rounded-xl"
-            >
-              Retry
-            </button>
-          </div>
-        )}
-
-        {!loading && data && (
-          <>
-            {!isPro ? (
-              <ProGateCard
-                featureTitle={lang === "en" ? "AI Customer Segmentation (RFM)" : "स्मार्ट ग्राहक वर्गीकरण (RFM)"}
-                featureDesc={lang === "en" ? "Unlock Machine Learning RFM analysis to identify churned regulars, high-value repeat shoppers, and automate WhatsApp win-back vouchers." : "मशीन लर्निंग से ग्राहकों का विश्लेषण करें। 21+ दिनों से न आने वाले पक्के ग्राहकों को पहचानें और डिस्काउंट वाउचर भेजें।"}
-                benefits={[
-                  "RFM Recency, Frequency & Monetary segmentation",
-                  "Identify churn-risk shoppers before they switch stores",
-                  "1-Click automated WhatsApp win-back campaign generator"
-                ]}
-                lang={lang}
-                onUnlocked={() => {
-                  setMerchant(authStorage.getMerchant());
-                  loadCustomers();
-                }}
-              />
-            ) : (
-              <>
-                {/* Segment Tab Cards */}
-                <div className="grid grid-cols-3 gap-2">
-                  {data.summary.map((sum) => {
-                    const isActive = activeTab === sum.segment;
-                    const isAtRisk = sum.segment === "At-risk";
-                    const isRegular = sum.segment === "Regular";
-
-                    return (
-                      <button
-                        key={sum.segment}
-                        onClick={() => setActiveTab(sum.segment)}
-                        className={`paytm-card p-3 text-left transition border ${
-                          isActive
-                            ? isAtRisk
-                              ? "border-rose-500 ring-2 ring-rose-200 bg-rose-50/40"
-                              : "border-[#00BAF2] ring-2 ring-sky-200 bg-sky-50/40"
-                            : "border-transparent hover:bg-slate-50"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[10px] font-extrabold uppercase text-slate-500">
-                            {getSegmentLabel(sum.segment)}
-                          </span>
-                          {isAtRisk ? (
-                            <UserMinus className="w-3.5 h-3.5 text-rose-600" />
-                          ) : (
-                            <UserCheck className="w-3.5 h-3.5 text-[#00BAF2]" />
-                          )}
-                        </div>
-                        <p className="text-base font-black text-slate-900">
-                          {sum.count}
-                        </p>
-                        <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
-                          {sum.percentage}% of store
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Segment Description Banner */}
-                <div className="p-3 rounded-xl bg-white border border-slate-200 flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-bold text-slate-800">
-                      {data.summary.find((s) => s.segment === activeTab)?.description}
-                    </p>
-                    {activeTab === "At-risk" && (
-                      <p className="text-[10px] text-rose-700 font-semibold mt-0.5">
-                        💡 20 regulars have churned in the last 3 weeks. Send a 10% win-back coupon.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+        {/* Customer Directory Table */}
+        <div className="rounded-2xl bg-white dark:bg-[#0c1324] border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
+          {/* Search bar */}
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-900/40">
+            <div className="relative flex-1 max-w-sm">
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder={lang === "en" ? "Search customer name or phone..." : "ग्राहक का नाम खोजें..."}
-                className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-[#00BAF2]"
+                placeholder="Search by customer name or phone suffix..."
+                className="w-full bg-white dark:bg-slate-900 text-xs px-3 py-2 pl-8 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-[#00BAF2]/30"
               />
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
             </div>
 
-            {/* Customers List */}
-            <div className="paytm-card divide-y divide-slate-100 overflow-hidden">
-              {filteredCustomers.map((c) => {
-                const isChurn = c.churn_risk;
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <Lock className="w-3.5 h-3.5 text-slate-400" />
+              <span>Customer phone privacy protected (Masked KYC Standard)</span>
+            </div>
+          </div>
 
-                return (
-                  <div key={c.id} className="p-3.5 hover:bg-slate-50 transition">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-xs font-black text-slate-900">
-                            {c.name}
-                          </h4>
-                          {isChurn && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">
-                              {t.customers.churnRiskTag}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                          {c.phone_masked}
-                        </p>
-                      </div>
-
-                      <button
-                        onClick={() => handleSendOffer(c.segment, c.name)}
-                        className="px-2.5 py-1 rounded-lg bg-[#E8F8FE] text-[#002E6E] text-[11px] font-bold hover:bg-[#00BAF2] hover:text-white transition flex items-center gap-1"
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-900/60 text-slate-400 font-bold uppercase text-[10px] tracking-wider border-b border-slate-100 dark:border-slate-800">
+                <tr>
+                  <th className="py-3 px-4">Customer Name</th>
+                  <th className="py-3 px-4">Masked Mobile</th>
+                  <th className="py-3 px-4">Total Visits</th>
+                  <th className="py-3 px-4">Lifetime Spend</th>
+                  <th className="py-3 px-4">Average Bill</th>
+                  <th className="py-3 px-4">Last Visit</th>
+                  <th className="py-3 px-4">Segment</th>
+                  <th className="py-3 px-4 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {filteredCustomers.map((c) => (
+                  <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/40 transition">
+                    <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
+                      {c.name}
+                    </td>
+                    <td className="py-3 px-4 text-slate-500 font-mono flex items-center gap-1.5">
+                      <Phone className="w-3 h-3 text-slate-400" />
+                      <span>{c.phone_masked}</span>
+                    </td>
+                    <td className="py-3 px-4 font-mono">{c.visit_count} checkouts</td>
+                    <td className="py-3 px-4 font-mono font-bold text-slate-900 dark:text-white">
+                      ₹{c.total_spend.toLocaleString("en-IN")}
+                    </td>
+                    <td className="py-3 px-4 font-mono">₹{c.avg_bill.toFixed(0)}</td>
+                    <td className="py-3 px-4">
+                      <span
+                        className={
+                          c.recency_days >= 21
+                            ? "text-rose-600 font-bold"
+                            : "text-slate-600 dark:text-slate-300"
+                        }
+                      >
+                        {c.recency_days === 0
+                          ? "Today"
+                          : c.recency_days === 1
+                          ? "Yesterday"
+                          : `${c.recency_days} days ago`}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${getSegmentBadge(
+                          c.segment
+                        )}`}
+                      >
+                        {c.segment}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <Link
+                        href={`/marketing?segment=${c.segment.toLowerCase()}&customer=${c.id}`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950 text-[#00BAF2] hover:bg-[#00BAF2] hover:text-white font-bold text-[11px] transition"
                       >
                         <Send className="w-3 h-3" />
-                        <span>Offer</span>
-                      </button>
-                    </div>
-
-                    {/* Reason Badge */}
-                    <div className="mt-2 text-[10px] bg-slate-50 text-slate-600 px-2.5 py-1.5 rounded-lg border border-slate-100 font-medium">
-                      {c.reason}
-                    </div>
-
-                    {/* Stats pills */}
-                    <div className="mt-2 flex items-center gap-4 text-[10px] text-slate-500">
-                      <div className="flex items-center gap-1 font-semibold">
-                        <ShoppingBag className="w-3 h-3 text-[#00BAF2]" />
-                        <span>{c.visit_count} {t.customers.visits}</span>
-                      </div>
-                      <div className="flex items-center gap-1 font-semibold">
-                        <IndianRupee className="w-3 h-3 text-emerald-600" />
-                        <span>₹{Math.round(c.total_spend).toLocaleString("en-IN")} total</span>
-                      </div>
-                      <div className="flex items-center gap-1 text-slate-400">
-                        <Calendar className="w-3 h-3" />
-                        <span>{c.recency_days}d ago</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {filteredCustomers.length === 0 && (
-                <div className="p-8 text-center text-xs text-slate-500">
-                  {lang === "en" ? "No customers found in this segment." : "इस वर्ग में कोई ग्राहक नहीं मिला।"}
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </main>
-
-      <Navigation currentLang={lang} />
-    </div>
+                        <span>Send Offer</span>
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </AppLayout>
   );
 }
