@@ -119,29 +119,9 @@ def create_organization(body: OrgCreate, current_user: User = Depends(get_curren
 
     existing = _get_user_org(current_user, db)
     if existing:
-        org = existing
-        org.legal_name = body.legal_name.strip()
-        org.trading_name = (body.trading_name or body.legal_name).strip()
-        org.name = org.trading_name
-        org.business_type = body.business_type
-        org.category = body.category
-        org.address = body.address
-        org.city = body.city
-        org.state = body.state
-        org.pin_code = body.pin_code
-        org.country = body.country
-        org.business_email = body.business_email
-        org.gstin = body.gstin
-        org.pan = body.pan
-        org.cin = body.cin
-        org.website = body.website
-        org.language = body.language
-        org.currency = body.currency
-        org.updated_at = datetime.utcnow()
-        db.commit()
-        db.refresh(org)
-    else:
-        org = Organization(
+        raise HTTPException(status_code=409, detail="You already have an organisation. Use PATCH /organizations/current to update it.")
+
+    org = Organization(
             legal_name=body.legal_name.strip(),
             trading_name=(body.trading_name or body.legal_name).strip(),
             name=(body.trading_name or body.legal_name).strip(),
@@ -161,12 +141,12 @@ def create_organization(body: OrgCreate, current_user: User = Depends(get_curren
             currency=body.currency,
             status="onboarding",
         )
-        db.add(org)
-        db.commit()
-        db.refresh(org)
+    db.add(org)
+    db.commit()
+    db.refresh(org)
 
-        db.add(OrganizationMember(organization_id=org.id, user_id=current_user.id, role="owner"))
-        db.commit()
+    db.add(OrganizationMember(organization_id=org.id, user_id=current_user.id, role="owner"))
+    db.commit()
 
     # Create or update onboarding progress record
     progress = db.query(OnboardingProgress).filter(OnboardingProgress.organization_id == org.id).first()
