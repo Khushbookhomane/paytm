@@ -122,16 +122,6 @@ function SignInContent() {
 
       {/* Primary Auth Actions */}
       <div className="space-y-2.5">
-        <GoogleSignInButton text="Continue with Google" />
-
-        <div className="flex items-center gap-3 my-2">
-          <div className="flex-1 h-px bg-slate-200" />
-          <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">
-            or email
-          </span>
-          <div className="flex-1 h-px bg-slate-200" />
-        </div>
-
         <EmailMagicLinkForm buttonText="Continue with Email" />
 
         <div className="flex items-center gap-3 my-2">
