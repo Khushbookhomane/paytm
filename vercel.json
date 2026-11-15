@@ -1,11 +1,7 @@
 {
   "version": 2,
   "name": "paytm-ventureai-frontend",
-  "buildCommand": "npm run build",
-  "outputDirectory": ".next",
-  "installCommand": "npm install",
   "framework": "nextjs",
-  "rootDirectory": "frontend",
   "git": {
     "deploymentEnabled": {
       "main": true
